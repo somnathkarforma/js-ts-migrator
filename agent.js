@@ -1,7 +1,7 @@
 /* ═══════════════════════════════════════════════════════
    TS·FORGE — Migration Agent Engine (agent.js)
    API: Groq (free tier) — llama-3.3-70b-versatile (primary)
-                         — llama3-8b-8192        (TPM fallback, 30k TPM)
+                         — meta-llama/llama-4-scout-17b-16e-instruct (TPM fallback, 30k TPM)
    ═══════════════════════════════════════════════════════ */
 
 'use strict';
@@ -10,8 +10,8 @@ const MigrationAgent = (() => {
   // ── Constants ─────────────────────────────────────────
   // Models tried in order. On TPM-rate-limit (429 tokens/min), the engine
   // automatically falls back to the next model in the list.
-  // llama-3.3-70b: 12,000 TPM free | llama3-8b-8192: 30,000 TPM free
-  const MODELS = ['llama-3.3-70b-versatile', 'llama3-8b-8192'];
+  // llama-3.3-70b: 12,000 TPM free | llama-4-scout-17b: 30,000 TPM free
+  const MODELS = ['llama-3.3-70b-versatile', 'meta-llama/llama-4-scout-17b-16e-instruct'];
   const MAX_OUTPUT_TOKENS = 4096;  // reduced from 8192 — Groq charges both input+output against TPM
   const MAX_TOKENS_PER_BATCH = 2000;  // reduced from 4000 to stay under 12k TPM/min
   const MAX_RETRIES = 4;
@@ -214,7 +214,7 @@ identifier names from the migration data. Do not use placeholder text.`,
 
   // ── Retry + Model-Fallback Wrapper ────────────────────
   // On TPM rate-limit (tokens/min), automatically switches to the fallback
-  // model (llama3-8b-8192, 30k TPM) before applying backoff.
+  // model (llama-4-scout-17b-16e-instruct, 30k TPM) before applying backoff.
   // On other 429s, waits for the Retry-After header duration.
   async function callGroqWithRetry(apiKey, systemPrompt, userPrompt, signal) {
     let lastError;

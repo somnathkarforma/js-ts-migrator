@@ -20,7 +20,7 @@ Deploy to GitHub Pages and access at: `https://<your-username>.github.io/<repo-n
 ## Features
 
 ### Core AI Migration
-- **6-stage agentic pipeline** using `llama-3.3-70b-versatile` (primary) with automatic fallback to `llama3-8b-8192`
+- **6-stage agentic pipeline** using `llama-3.3-70b-versatile` (primary) with automatic fallback to `meta-llama/llama-4-scout-17b-16e-instruct`
 - **Intelligent type inference** with confidence scoring (certain / inferred / ambiguous)
 - **Interface generation** — creates TypeScript interfaces, type aliases, and enums
 - **Full code transformation** — converts syntax, module system, class modifiers, async patterns
@@ -28,7 +28,7 @@ Deploy to GitHub Pages and access at: `https://<your-username>.github.io/<repo-n
 - **Migration report** with coverage stats, review items table, and effort estimates
 
 ### Rate-Limit Resilience
-- **Model fallback** — on TPM rate-limit, automatically switches from `llama-3.3-70b` (12k TPM) to `llama3-8b-8192` (30k TPM) with no delay
+- **Model fallback** — on TPM rate-limit, automatically switches from `llama-3.3-70b` (12k TPM) to `meta-llama/llama-4-scout-17b-16e-instruct` (30k TPM) with no delay
 - **Retry-After support** — reads Groq's `Retry-After` response header and waits the exact server-specified duration
 - **Resume from failed stage** — after a rate-limit error, an amber **↻ Retry** button appears that resumes the pipeline from exactly the failed stage, reusing all already-completed stage results
 - **Reduced batch size** — `MAX_TOKENS_PER_BATCH` set to 2,000; `MAX_OUTPUT_TOKENS` set to 4,096 to keep each request well under the 12k TPM free limit
@@ -170,7 +170,7 @@ TS·FORGE handles this automatically:
 - Shows a red error node and popup if all retries are exhausted
 - The amber **↻ Retry from "Stage Name"** button resumes from the exact failing stage
 
-To eliminate rate-limit errors entirely, upgrade to **Groq Dev Tier** (free, phone verification only) at [console.groq.com/settings/billing](https://console.groq.com/settings/billing) — this gives 100k TPM.
+To eliminate rate-limit errors entirely, upgrade to **Groq Dev Tier** (free, phone verification only) at [console.groq.com/settings/billing](https://console.groq.com/settings/billing/plans) — this gives 100k TPM.
 
 ## Supported Input Formats
 
@@ -280,7 +280,7 @@ MIT License — see [LICENSE](LICENSE) for details.
 ## Acknowledgments
 
 - [Groq](https://groq.com) — ultra-fast LLM inference powering all 6 migration stages (free tier)
-- [Meta / Llama](https://llama.meta.com) — `llama-3.3-70b-versatile` and `llama3-8b-8192` models
+- [Meta / Llama](https://llama.meta.com) — `llama-3.3-70b-versatile` and `meta-llama/llama-4-scout-17b-16e-instruct` models
 - [JetBrains Mono](https://www.jetbrains.com/lp/mono/) — Monospace font for code display
 - [Syne](https://fonts.google.com/specimen/Syne) / [DM Sans](https://fonts.google.com/specimen/DM+Sans) — Display and body typography
 
