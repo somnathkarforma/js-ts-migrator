@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta http-equiv="Content-Security-Policy"
-    content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src 'self' https://api.anthropic.com https://api.github.com https://raw.githubusercontent.com; img-src 'self' data:;" />
+    content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src 'self' https://generativelanguage.googleapis.com https://api.github.com https://raw.githubusercontent.com; img-src 'self' data:;" />
   <title>TS·FORGE — AI-Powered JS→TS Migration Agent</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'><polygon points='20,2 37,11 37,29 20,38 3,29 3,11' fill='%233B82F6' opacity='0.9'/><text x='20' y='26' text-anchor='middle' fill='white' font-family='sans-serif' font-size='14' font-weight='bold'>TS</text></svg>" />
   <link rel="stylesheet" href="styles.css" />
@@ -33,7 +33,7 @@
             type="password"
             id="api-key-input"
             class="api-key-field"
-            placeholder="sk-ant-api03-..."
+            placeholder="AIzaSy..."
             autocomplete="off"
             spellcheck="false"
             aria-label="Anthropic API Key"
@@ -59,7 +59,7 @@
         <span class="key-status" id="key-status" role="status" aria-live="polite"></span>
         <span class="auto-key-badge" id="auto-key-badge" hidden aria-live="polite">🔑 Key loaded from repository secrets</span>
         <span class="tooltip-text sr-only" id="api-key-tooltip">
-          Your key is used only to call the Anthropic API directly from your browser. It is never stored on any server.
+          Your Gemini key is used only to call the Google AI API directly from your browser. It is never stored on any server.
         </span>
       </div>
 
@@ -172,7 +172,7 @@
 
         <!-- GITHUB URL TAB -->
         <div class="tab-panel" id="tab-github" role="tabpanel" aria-labelledby="tab-btn-github">
-          <p class="github-note">Only public repositories are supported. File contents are fetched directly from GitHub and never sent to any server other than the Anthropic API.</p>
+          <p class="github-note">Only public repositories are supported. File contents are fetched directly from GitHub and never sent to any server other than the Google Gemini API.</p>
           <div class="github-input-row">
             <input
               type="url"
@@ -291,9 +291,9 @@
   <footer class="app-footer" role="contentinfo">
     <p class="footer-privacy">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-      Your code and API key are never sent to any server other than Anthropic's API. No tracking. No cookies.
+      Your code and Gemini API key are never sent to any server other than Google's AI API. No tracking. No cookies.
     </p>
-    <p class="footer-credit">TS·FORGE — Powered by Claude claude-sonnet-4-20250514 &nbsp;|&nbsp; MIT License</p>
+    <p class="footer-credit">TS·FORGE — Powered by Gemini 2.0 Flash &nbsp;|&nbsp; MIT License</p>
   </footer>
 
   <!-- API KEY HELP MODAL -->
@@ -307,14 +307,14 @@
       </div>
       <div class="modal-body">
         <ol class="modal-steps">
-          <li>Go to <strong>console.anthropic.com</strong> and create a free account</li>
-          <li>Navigate to <strong>API Keys</strong> in your account settings</li>
-          <li>Click <strong>Create Key</strong> and copy the generated key</li>
+          <li>Go to <strong>aistudio.google.com</strong> and sign in with your Google account</li>
+          <li>Click <strong>Get API key</strong> → <strong>Create API key</strong></li>
+          <li>Copy the generated key — it starts with <strong>AIza</strong></li>
           <li>Paste it in the API key field above and click <strong>Save for session</strong></li>
         </ol>
         <div class="modal-security-note">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-          <p>Your API key is stored only in your browser's <strong>sessionStorage</strong> and is automatically cleared when you close the tab. It is sent exclusively to <strong>api.anthropic.com</strong> and never transmitted to any other server.</p>
+          <p>Your API key is stored only in your browser’s <strong>sessionStorage</strong> and is automatically cleared when you close the tab. It is sent exclusively to <strong>generativelanguage.googleapis.com</strong> and never transmitted to any other server.</p>
         </div>
       </div>
       <div class="modal-footer">

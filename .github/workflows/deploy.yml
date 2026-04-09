@@ -26,14 +26,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Inject Anthropic API key into config.js
+      - name: Inject Gemini API key into config.js
         # Writes the secret into config.js for the Pages artifact only.
         # The key is NOT committed back to the repository.
         # NOTE: The deployed config.js will be publicly accessible at your
-        # Pages URL. Restrict API key usage in the Anthropic console to
-        # your Pages domain to limit exposure.
+        # Pages URL. Restrict API key usage in Google AI Studio to your
+        # Pages domain (Application restrictions) to limit exposure.
         run: |
-          echo "window.TSFORGE_API_KEY = '${{ secrets.ANTHROPIC_API_KEY }}';" > config.js
+          echo "window.TSFORGE_API_KEY = '${{ secrets.GEMINI_API_KEY }}';" > config.js
 
       - name: Setup Pages
         uses: actions/configure-pages@v5

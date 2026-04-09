@@ -32,7 +32,7 @@ const TSForgeApp = (() => {
     function _log(level, ...args) {
       const msg = args.map(String).join(' ');
       // Avoid leaking sensitive data — strip any key-like patterns before logging
-      const safe = msg.replace(/sk-ant-[a-zA-Z0-9_-]+/g, '[REDACTED]');
+      const safe = msg.replace(/AIza[0-9A-Za-z_-]{35,}/g, '[REDACTED]');
       const fn = level === 'error' ? console.error : level === 'warn' ? console.warn : console.info;
       fn(`[TS·FORGE][${level.toUpperCase()}]`, safe);
     }
@@ -71,7 +71,8 @@ const TSForgeApp = (() => {
      * Validate API key format.
      */
     isValidApiKey(key) {
-      return /^sk-ant-[a-zA-Z0-9_-]+$/.test(key);
+      // Gemini API keys: start with AIza, ~39 chars total
+      return /^AIza[0-9A-Za-z_-]{30,}$/.test(key);
     },
 
     /**
@@ -161,7 +162,7 @@ const TSForgeApp = (() => {
         return;
       }
       if (!Security.isValidApiKey(raw)) {
-        Toast.show('error', 'Invalid Key Format', 'API keys must start with sk-ant- followed by alphanumeric characters.');
+        Toast.show('error', 'Invalid Key Format', 'Gemini API keys start with AIza and are ~39 characters long.');
         dom.keyStatus.className = 'key-status invalid';
         Security.setTextSafe(dom.keyStatus, '✕ Invalid format');
         return;
@@ -466,7 +467,7 @@ const TSForgeApp = (() => {
         }
       } catch (e) {
         const msg = e.message || 'Unknown error';
-        Toast.show('error', 'Fetch Failed', msg.replace(/sk-ant-[a-zA-Z0-9_-]+/g, '[REDACTED]'));
+      Toast.show('error', 'Fetch Failed', msg.replace(/AIza[0-9A-Za-z_-]{35,}/g, '[REDACTED]'));
       } finally {
         dom.fetchGithubBtn.disabled = false;
         Security.setTextSafe(dom.fetchGithubBtn, 'Fetch');
@@ -1079,7 +1080,7 @@ const TSForgeApp = (() => {
         Toast.show('info', 'Migration cancelled', 'You cancelled the migration.');
         FlowVisualizer.reset();
       } else {
-        const safeMsg = (err.message || '').replace(/sk-ant-[a-zA-Z0-9_-]+/g, '[REDACTED]');
+        const safeMsg = (err.message || '').replace(/AIza[0-9A-Za-z_-]{35,}/g, '[REDACTED]');
         Toast.show('error', 'Migration Failed', safeMsg);
         logger.error('Migration failed:', safeMsg);
       }

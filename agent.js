@@ -1,15 +1,17 @@
 /* ═══════════════════════════════════════════════════════
    TS·FORGE — Migration Agent Engine (agent.js)
+   API: Google Gemini 2.0 Flash (free tier)
    ═══════════════════════════════════════════════════════ */
 
 'use strict';
 
 const MigrationAgent = (() => {
   // ── Constants ─────────────────────────────────────────
-  const MODEL = 'claude-sonnet-4-20250514';
-  const MAX_TOKENS = 4096;
+  const MODEL = 'gemini-2.0-flash';
+  const MAX_OUTPUT_TOKENS = 8192;
   const MAX_TOKENS_PER_BATCH = 4000;
   const MAX_RETRIES = 3;
+  const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 
   const STAGES = [
     { index: 0, name: 'Codebase Analyzer',   desc: 'Extracting structure and patterns' },
@@ -168,48 +170,50 @@ identifier names from the migration data. Do not use placeholder text.`,
   };
 
   // ── Core API Caller ───────────────────────────────────
-  async function callClaude(apiKey, systemPrompt, userPrompt, signal) {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+  async function callGemini(apiKey, systemPrompt, userPrompt, signal) {
+    const url = `${GEMINI_BASE}/${MODEL}:generateContent?key=${apiKey}`;
+    const response = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: MODEL,
-        max_tokens: MAX_TOKENS,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: userPrompt }],
+        systemInstruction: { parts: [{ text: systemPrompt }] },
+        contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+        generationConfig: {
+          maxOutputTokens: MAX_OUTPUT_TOKENS,
+          temperature: 0.2,
+        },
       }),
       signal,
     });
 
     if (!response.ok) {
       const err = await response.json().catch(() => ({}));
-      throw new Error(err?.error?.message || `API error ${response.status}`);
+      const msg = err?.error?.message || `API error ${response.status}`;
+      throw new Error(msg);
     }
 
     const data = await response.json();
-    return data.content[0].text;
+    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!text) throw new Error('Empty response from Gemini API');
+    return text;
   }
 
   // ── Exponential Backoff Wrapper ───────────────────────
-  async function callClaudeWithRetry(apiKey, systemPrompt, userPrompt, signal) {
+  async function callGeminiWithRetry(apiKey, systemPrompt, userPrompt, signal) {
     let lastError;
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
       try {
         if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
-        return await callClaude(apiKey, systemPrompt, userPrompt, signal);
+        return await callGemini(apiKey, systemPrompt, userPrompt, signal);
       } catch (err) {
         if (err.name === 'AbortError') throw err;
         lastError = err;
 
-        const isRetryable = err.message?.includes('529') ||
+        const isRetryable = err.message?.includes('429') ||
+                            err.message?.includes('500') ||
+                            err.message?.includes('503') ||
                             err.message?.includes('overloaded') ||
-                            err.message?.includes('rate') ||
-                            err.message?.includes('500');
+                            err.message?.includes('rate');
 
         if (!isRetryable || attempt === MAX_RETRIES - 1) throw err;
 
@@ -257,7 +261,7 @@ identifier names from the migration data. Do not use placeholder text.`,
     for (const file of files) {
       const truncated = file.content.slice(0, MAX_TOKENS_PER_BATCH * 3);
       const prompt = `Analyze this JavaScript file named "${file.name}":\n\n\`\`\`javascript\n${truncated}\n\`\`\``;
-      const raw = await callClaudeWithRetry(apiKey, SYSTEM_PROMPTS.analysis, prompt, signal);
+      const raw = await callGeminiWithRetry(apiKey, SYSTEM_PROMPTS.analysis, prompt, signal);
       let analysis;
       try {
         analysis = extractJson(raw);
@@ -295,7 +299,7 @@ ${file.content.slice(0, MAX_TOKENS_PER_BATCH * 2)}
 
 Produce the type mapping.`;
 
-      const raw = await callClaudeWithRetry(apiKey, SYSTEM_PROMPTS.typeInference, prompt, signal);
+      const raw = await callGeminiWithRetry(apiKey, SYSTEM_PROMPTS.typeInference, prompt, signal);
       let typeMap;
       try {
         const parsed = extractJson(raw);
@@ -332,7 +336,7 @@ ${JSON.stringify({ analysis, typeMap }, null, 2).slice(0, 2000)}
 
 Generate all necessary TypeScript interfaces, type aliases, and enums.`;
 
-      const interfaces = await callClaudeWithRetry(apiKey, SYSTEM_PROMPTS.interfaces, prompt, signal);
+      const interfaces = await callGeminiWithRetry(apiKey, SYSTEM_PROMPTS.interfaces, prompt, signal);
       // Extract from code block if present
       const clean = interfaces.replace(/```typescript\n?/g, '').replace(/```\n?/g, '').trim();
       interfaceBlocks.push({ file: file.name, interfaces: clean });
@@ -368,7 +372,7 @@ ${file.content.slice(0, MAX_TOKENS_PER_BATCH * 3)}
 
 Return ONLY the complete TypeScript file. No explanation.`;
 
-      const tsCode = await callClaudeWithRetry(apiKey, SYSTEM_PROMPTS.transform, prompt, signal);
+      const tsCode = await callGeminiWithRetry(apiKey, SYSTEM_PROMPTS.transform, prompt, signal);
 
       // Clean up code block markers if present
       let clean = tsCode.replace(/^```typescript\n?/m, '').replace(/^```ts\n?/m, '').replace(/```\s*$/m, '').trim();
@@ -401,7 +405,7 @@ Return ONLY the complete TypeScript file. No explanation.`;
 
 Generate the TypeScript configuration files.`;
 
-    const raw = await callClaudeWithRetry(apiKey, SYSTEM_PROMPTS.config, prompt, signal);
+    const raw = await callGeminiWithRetry(apiKey, SYSTEM_PROMPTS.config, prompt, signal);
     let config;
     try {
       config = extractJson(raw);
@@ -485,7 +489,7 @@ ${analysisResults.map((r, i) => `${files[i]?.name}: framework=${r.analysis?.fram
 
 Write the full migration report in Markdown.`;
 
-    const report = await callClaudeWithRetry(apiKey, SYSTEM_PROMPTS.report, prompt, signal);
+    const report = await callGeminiWithRetry(apiKey, SYSTEM_PROMPTS.report, prompt, signal);
 
     onStageUpdate(5, 'complete', { reviewItems, totalLines });
     return report;
