@@ -1482,3 +1482,12 @@ export default Transaction;
   // ── Public API ────────────────────────────────────────
   return { init };
 })();
+
+// Auto-initialise once the DOM is ready.
+// Scripts are loaded at the bottom of <body> (all elements already parsed),
+// but we use DOMContentLoaded to be safe across all browsers.
+// NOTE: This replaces the inline <script> block that was previously in
+// index.html — inline scripts are blocked by the page's script-src CSP.
+document.addEventListener('DOMContentLoaded', function () {
+  TSForgeApp.init();
+});
