@@ -10,9 +10,9 @@ const MigrationAgent = (() => {
   // ── Constants ─────────────────────────────────────────
   // Models tried in order. On TPM-rate-limit (429 tokens/min), the engine
   // automatically falls back to the next model in the list.
-  // llama-3.3-70b: 12,000 TPM free | llama-3.1-8b: 131,072 TPM free
-  const MODELS = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'];
-  const MAX_OUTPUT_TOKENS = 8192;
+  // llama-3.3-70b: 12,000 TPM free | llama3-8b-8192: 30,000 TPM free
+  const MODELS = ['llama-3.3-70b-versatile', 'llama3-8b-8192'];
+  const MAX_OUTPUT_TOKENS = 4096;  // reduced from 8192 — Groq charges both input+output against TPM
   const MAX_TOKENS_PER_BATCH = 2000;  // reduced from 4000 to stay under 12k TPM/min
   const MAX_RETRIES = 4;
   const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
