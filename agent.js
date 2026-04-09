@@ -287,8 +287,7 @@ identifier names from the migration data. Do not use placeholder text.`,
   // ── Stage 1: Analysis ─────────────────────────────────
   async function stageAnalysis(files, apiKey, signal, onStageUpdate) {
     onStageUpdate(0, 'running', null);
-
-    const results = [];
+    try {
     for (const file of files) {
       const truncated = file.content.slice(0, MAX_TOKENS_PER_BATCH * 3);
       const prompt = `Analyze this JavaScript file named "${file.name}":\n\n\`\`\`javascript\n${truncated}\n\`\`\``;
@@ -313,12 +312,12 @@ identifier names from the migration data. Do not use placeholder text.`,
   // ── Stage 2: Type Inference ───────────────────────────
   async function stageTypeInference(files, analysisResults, apiKey, signal, onStageUpdate) {
     onStageUpdate(1, 'running', null);
-
-    const typeResults = [];
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      const analysis = analysisResults[i]?.analysis || {};
-      const prompt = `Given this JavaScript analysis JSON:
+    try {
+      const typeResults = [];
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const analysis = analysisResults[i]?.analysis || {};
+        const prompt = `Given this JavaScript analysis JSON:
 \`\`\`json
 ${JSON.stringify(analysis, null, 2)}
 \`\`\`
@@ -330,32 +329,35 @@ ${file.content.slice(0, MAX_TOKENS_PER_BATCH * 2)}
 
 Produce the type mapping.`;
 
-      const raw = await callGroqWithRetry(apiKey, SYSTEM_PROMPTS.typeInference, prompt, signal);
-      let typeMap;
-      try {
-        const parsed = extractJson(raw);
-        typeMap = parsed.type_map || parsed;
-      } catch (_) {
-        typeMap = {};
+        const raw = await callGroqWithRetry(apiKey, SYSTEM_PROMPTS.typeInference, prompt, signal);
+        let typeMap;
+        try {
+          const parsed = extractJson(raw);
+          typeMap = parsed.type_map || parsed;
+        } catch (_) {
+          typeMap = {};
+        }
+        typeResults.push({ file: file.name, typeMap });
       }
-      typeResults.push({ file: file.name, typeMap });
+      onStageUpdate(1, 'complete', { typeResults });
+      return typeResults;
+    } catch (err) {
+      if (err.name !== 'AbortError') onStageUpdate(1, 'error', { message: err.message });
+      throw err;
     }
-
-    onStageUpdate(1, 'complete', { typeResults });
-    return typeResults;
   }
 
   // ── Stage 3: Interface Generation ────────────────────
   async function stageInterfaceGeneration(files, analysisResults, typeResults, apiKey, signal, onStageUpdate) {
     onStageUpdate(2, 'running', null);
+    try {
+      const interfaceBlocks = [];
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const typeMap = typeResults[i]?.typeMap || {};
+        const analysis = analysisResults[i]?.analysis || {};
 
-    const interfaceBlocks = [];
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      const typeMap = typeResults[i]?.typeMap || {};
-      const analysis = analysisResults[i]?.analysis || {};
-
-      const prompt = `Given the source code for ${file.name}:
+        const prompt = `Given the source code for ${file.name}:
 \`\`\`javascript
 ${file.content.slice(0, MAX_TOKENS_PER_BATCH * 2)}
 \`\`\`
@@ -367,27 +369,30 @@ ${JSON.stringify({ analysis, typeMap }, null, 2).slice(0, 2000)}
 
 Generate all necessary TypeScript interfaces, type aliases, and enums.`;
 
-      const interfaces = await callGroqWithRetry(apiKey, SYSTEM_PROMPTS.interfaces, prompt, signal);
-      // Extract from code block if present
-      const clean = interfaces.replace(/```typescript\n?/g, '').replace(/```\n?/g, '').trim();
-      interfaceBlocks.push({ file: file.name, interfaces: clean });
+        const interfaces = await callGroqWithRetry(apiKey, SYSTEM_PROMPTS.interfaces, prompt, signal);
+        // Extract from code block if present
+        const clean = interfaces.replace(/```typescript\n?/g, '').replace(/```\n?/g, '').trim();
+        interfaceBlocks.push({ file: file.name, interfaces: clean });
+      }
+      onStageUpdate(2, 'complete', { interfaceBlocks });
+      return interfaceBlocks;
+    } catch (err) {
+      if (err.name !== 'AbortError') onStageUpdate(2, 'error', { message: err.message });
+      throw err;
     }
-
-    onStageUpdate(2, 'complete', { interfaceBlocks });
-    return interfaceBlocks;
   }
 
   // ── Stage 4: Code Transformation ─────────────────────
   async function stageCodeTransformation(files, analysisResults, typeResults, interfaceBlocks, apiKey, signal, onStageUpdate) {
     onStageUpdate(3, 'running', null);
+    try {
+      const transformed = {};
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const typeMap = typeResults[i]?.typeMap || {};
+        const interfaces = interfaceBlocks[i]?.interfaces || '';
 
-    const transformed = {};
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      const typeMap = typeResults[i]?.typeMap || {};
-      const interfaces = interfaceBlocks[i]?.interfaces || '';
-
-      const prompt = `Transform this JavaScript file (${file.name}) to TypeScript.
+        const prompt = `Transform this JavaScript file (${file.name}) to TypeScript.
 
 Available interfaces and types for reference:
 \`\`\`typescript
@@ -403,32 +408,35 @@ ${file.content.slice(0, MAX_TOKENS_PER_BATCH * 3)}
 
 Return ONLY the complete TypeScript file. No explanation.`;
 
-      const tsCode = await callGroqWithRetry(apiKey, SYSTEM_PROMPTS.transform, prompt, signal);
+        const tsCode = await callGroqWithRetry(apiKey, SYSTEM_PROMPTS.transform, prompt, signal);
 
-      // Clean up code block markers if present
-      let clean = tsCode.replace(/^```typescript\n?/m, '').replace(/^```ts\n?/m, '').replace(/```\s*$/m, '').trim();
-      // Convert input .js/.jsx filename to .ts/.tsx
-      const outName = file.name
-        .replace(/\.jsx$/, '.tsx')
-        .replace(/\.js$/, '.ts')
-        .replace(/\.mjs$/, '.ts')
-        .replace(/\.cjs$/, '.ts');
-      transformed[outName] = clean;
+        // Clean up code block markers if present
+        let clean = tsCode.replace(/^```typescript\n?/m, '').replace(/^```ts\n?/m, '').replace(/```\s*$/m, '').trim();
+        // Convert input .js/.jsx filename to .ts/.tsx
+        const outName = file.name
+          .replace(/\.jsx$/, '.tsx')
+          .replace(/\.js$/, '.ts')
+          .replace(/\.mjs$/, '.ts')
+          .replace(/\.cjs$/, '.ts');
+        transformed[outName] = clean;
+      }
+      onStageUpdate(3, 'complete', { count: Object.keys(transformed).length });
+      return transformed;
+    } catch (err) {
+      if (err.name !== 'AbortError') onStageUpdate(3, 'error', { message: err.message });
+      throw err;
     }
-
-    onStageUpdate(3, 'complete', { count: Object.keys(transformed).length });
-    return transformed;
   }
 
   // ── Stage 5: Config Generation ────────────────────────
   async function stageConfigGeneration(analysisResults, transformed, apiKey, signal, onStageUpdate) {
     onStageUpdate(4, 'running', null);
+    try {
+      // Aggregate analysis data
+      const frameworks = [...new Set(analysisResults.map(r => r.analysis?.framework).filter(Boolean))];
+      const moduleSystems = [...new Set(analysisResults.map(r => r.analysis?.module_system).filter(Boolean))];
 
-    // Aggregate analysis data
-    const frameworks = [...new Set(analysisResults.map(r => r.analysis?.framework).filter(Boolean))];
-    const moduleSystems = [...new Set(analysisResults.map(r => r.analysis?.module_system).filter(Boolean))];
-
-    const prompt = `Based on this codebase analysis:
+      const prompt = `Based on this codebase analysis:
 - Frameworks detected: ${frameworks.join(', ') || 'none'}
 - Module systems: ${moduleSystems.join(', ') || 'unknown'}
 - Files in project: ${Object.keys(transformed).join(', ')}
@@ -436,74 +444,78 @@ Return ONLY the complete TypeScript file. No explanation.`;
 
 Generate the TypeScript configuration files.`;
 
-    const raw = await callGroqWithRetry(apiKey, SYSTEM_PROMPTS.config, prompt, signal);
-    let config;
-    try {
-      config = extractJson(raw);
-    } catch (_) {
-      config = {
-        tsconfig: JSON.stringify({
-          compilerOptions: {
-            target: 'ES2020', module: 'ESNext', strict: true,
-            noImplicitAny: true, strictNullChecks: true,
-            noUnusedLocals: true, moduleResolution: 'node',
-            esModuleInterop: true, skipLibCheck: true,
-            forceConsistentCasingInFileNames: true,
-            outDir: './dist', rootDir: './src',
+      const raw = await callGroqWithRetry(apiKey, SYSTEM_PROMPTS.config, prompt, signal);
+      let config;
+      try {
+        config = extractJson(raw);
+      } catch (_) {
+        config = {
+          tsconfig: JSON.stringify({
+            compilerOptions: {
+              target: 'ES2020', module: 'ESNext', strict: true,
+              noImplicitAny: true, strictNullChecks: true,
+              noUnusedLocals: true, moduleResolution: 'node',
+              esModuleInterop: true, skipLibCheck: true,
+              forceConsistentCasingInFileNames: true,
+              outDir: './dist', rootDir: './src',
+            },
+            include: ['src/**/*'], exclude: ['node_modules', 'dist'],
+          }, null, 2),
+          package_additions: {
+            typescript: '^5.0.0',
+            'ts-node': '^10.0.0',
           },
-          include: ['src/**/*'], exclude: ['node_modules', 'dist'],
-        }, null, 2),
-        package_additions: {
-          typescript: '^5.0.0',
-          'ts-node': '^10.0.0',
-        },
-        eslintrc: JSON.stringify({
-          parser: '@typescript-eslint/parser',
-          plugins: ['@typescript-eslint'],
-          extends: ['eslint:recommended', 'plugin:@typescript-eslint/recommended'],
-        }, null, 2),
-        migrate_sh: '#!/bin/bash\nnpm install\nnpx tsc --noEmit\necho "Migration check complete"',
-        migrate_ps1: 'npm install\nnpx tsc --noEmit\nWrite-Host "Migration check complete"',
-      };
-    }
+          eslintrc: JSON.stringify({
+            parser: '@typescript-eslint/parser',
+            plugins: ['@typescript-eslint'],
+            extends: ['eslint:recommended', 'plugin:@typescript-eslint/recommended'],
+          }, null, 2),
+          migrate_sh: '#!/bin/bash\nnpm install\nnpx tsc --noEmit\necho "Migration check complete"',
+          migrate_ps1: 'npm install\nnpx tsc --noEmit\nWrite-Host "Migration check complete"',
+        };
+      }
 
-    // Add config files to output
-    const configFiles = {};
-    if (config.tsconfig) {
-      const tsconfig = typeof config.tsconfig === 'string' ? config.tsconfig : JSON.stringify(config.tsconfig, null, 2);
-      configFiles['tsconfig.json'] = tsconfig;
-    }
-    if (config.package_additions) {
-      configFiles['package-types-additions.json'] = JSON.stringify(config.package_additions, null, 2);
-    }
-    if (config.eslintrc) {
-      const eslintrc = typeof config.eslintrc === 'string' ? config.eslintrc : JSON.stringify(config.eslintrc, null, 2);
-      configFiles['.eslintrc.json'] = eslintrc;
-    }
-    if (config.migrate_sh)  configFiles['migrate.sh']  = config.migrate_sh;
-    if (config.migrate_ps1) configFiles['migrate.ps1'] = config.migrate_ps1;
+      // Add config files to output
+      const configFiles = {};
+      if (config.tsconfig) {
+        const tsconfig = typeof config.tsconfig === 'string' ? config.tsconfig : JSON.stringify(config.tsconfig, null, 2);
+        configFiles['tsconfig.json'] = tsconfig;
+      }
+      if (config.package_additions) {
+        configFiles['package-types-additions.json'] = JSON.stringify(config.package_additions, null, 2);
+      }
+      if (config.eslintrc) {
+        const eslintrc = typeof config.eslintrc === 'string' ? config.eslintrc : JSON.stringify(config.eslintrc, null, 2);
+        configFiles['.eslintrc.json'] = eslintrc;
+      }
+      if (config.migrate_sh)  configFiles['migrate.sh']  = config.migrate_sh;
+      if (config.migrate_ps1) configFiles['migrate.ps1'] = config.migrate_ps1;
 
-    onStageUpdate(4, 'complete', { files: Object.keys(configFiles) });
-    return configFiles;
+      onStageUpdate(4, 'complete', { files: Object.keys(configFiles) });
+      return configFiles;
+    } catch (err) {
+      if (err.name !== 'AbortError') onStageUpdate(4, 'error', { message: err.message });
+      throw err;
+    }
   }
 
   // ── Stage 6: Report Generation ────────────────────────
   async function stageReportGeneration(files, analysisResults, typeResults, transformed, configFiles, apiKey, signal, onStageUpdate) {
     onStageUpdate(5, 'running', null);
+    try {
+      // Build summary data for the report
+      const totalLines = Object.values(transformed).reduce((sum, code) => sum + code.split('\n').length, 0);
+      const reviewItems = Object.values(transformed).join('\n').match(/@ts-review:/g)?.length || 0;
 
-    // Build summary data for the report
-    const totalLines = Object.values(transformed).reduce((sum, code) => sum + code.split('\n').length, 0);
-    const reviewItems = Object.values(transformed).join('\n').match(/@ts-review:/g)?.length || 0;
+      const typeMapSummary = typeResults.map((r, i) => {
+        const counts = { certain: 0, inferred: 0, ambiguous: 0 };
+        Object.values(r.typeMap || {}).forEach(v => {
+          if (v.confidence) counts[v.confidence] = (counts[v.confidence] || 0) + 1;
+        });
+        return `${r.file}: ${JSON.stringify(counts)}`;
+      }).join('\n');
 
-    const typeMapSummary = typeResults.map((r, i) => {
-      const counts = { certain: 0, inferred: 0, ambiguous: 0 };
-      Object.values(r.typeMap || {}).forEach(v => {
-        if (v.confidence) counts[v.confidence] = (counts[v.confidence] || 0) + 1;
-      });
-      return `${r.file}: ${JSON.stringify(counts)}`;
-    }).join('\n');
-
-    const prompt = `Produce a migration report for this JavaScript→TypeScript migration:
+      const prompt = `Produce a migration report for this JavaScript→TypeScript migration:
 
 Files processed: ${files.map(f => f.name).join(', ')}
 Output TypeScript files: ${Object.keys(transformed).join(', ')}
@@ -520,10 +532,14 @@ ${analysisResults.map((r, i) => `${files[i]?.name}: framework=${r.analysis?.fram
 
 Write the full migration report in Markdown.`;
 
-    const report = await callGroqWithRetry(apiKey, SYSTEM_PROMPTS.report, prompt, signal);
+      const report = await callGroqWithRetry(apiKey, SYSTEM_PROMPTS.report, prompt, signal);
 
-    onStageUpdate(5, 'complete', { reviewItems, totalLines });
-    return report;
+      onStageUpdate(5, 'complete', { reviewItems, totalLines });
+      return report;
+    } catch (err) {
+      if (err.name !== 'AbortError') onStageUpdate(5, 'error', { message: err.message });
+      throw err;
+    }
   }
 
   // ── Main run() function ───────────────────────────────

@@ -36,7 +36,7 @@
             placeholder="gsk_..."
             autocomplete="off"
             spellcheck="false"
-            aria-label="Anthropic API Key"
+            aria-label="Groq API Key"
             aria-describedby="api-key-tooltip"
           />
           <button class="btn-icon api-key-reveal" id="api-key-reveal" aria-label="Toggle API key visibility" type="button">
@@ -299,11 +299,34 @@
     <p class="footer-credit">TS·FORGE — Powered by Groq · Llama 3.3 70B &nbsp;|&nbsp; MIT License</p>
   </footer>
 
+  <!-- STAGE ERROR MODAL -->
+  <div class="modal-overlay" id="modal-stage-error" role="alertdialog" aria-modal="true" aria-labelledby="modal-title-stage-error" aria-describedby="modal-stage-error-body" hidden>
+    <div class="modal-box modal-box--error">
+      <div class="modal-header">
+        <h2 class="modal-title modal-title--error" id="modal-title-stage-error">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" aria-hidden="true" style="flex-shrink:0"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          <span id="modal-stage-error-title">Stage Failed</span>
+        </h2>
+        <button class="btn-icon modal-close" data-modal="modal-stage-error" aria-label="Close dialog" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="modal-body" id="modal-stage-error-body">
+        <p class="stage-error-stage-label" id="modal-stage-error-label"></p>
+        <pre class="stage-error-detail" id="modal-stage-error-detail" aria-label="Error details"></pre>
+        <p class="stage-error-hint">If this is a rate-limit error, use the <strong>Retry</strong> button to resume from this stage. For persistent errors, check your API key or try again later.</p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-primary" data-modal="modal-stage-error" type="button">Dismiss</button>
+      </div>
+    </div>
+  </div>
+
   <!-- API KEY HELP MODAL -->
   <div class="modal-overlay" id="modal-api-help" role="dialog" aria-modal="true" aria-labelledby="modal-title-api" hidden>
     <div class="modal-box">
       <div class="modal-header">
-        <h2 class="modal-title" id="modal-title-api">Getting Your Anthropic API Key</h2>
+        <h2 class="modal-title" id="modal-title-api">Getting Your Groq API Key</h2>
         <button class="btn-icon modal-close" data-modal="modal-api-help" aria-label="Close dialog" type="button">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>

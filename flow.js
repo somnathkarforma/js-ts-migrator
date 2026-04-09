@@ -415,9 +415,17 @@ const FlowVisualizer = (() => {
     const messages = {
       running:  `Starting ${stageName}…`,
       complete: `${stageName} complete.${data ? ` ${buildDataLabel(stageIndex, data) || ''}` : ''}`,
-      error:    `${stageName} encountered an error.`,
+      error:    `${stageName} failed: ${data?.message || 'Unknown error'}`,
     };
     appendLog(stageIndex, status, messages[status] || `${stageName}: ${status}`);
+
+    // Dispatch a DOM event so app.js can open the error modal without coupling
+    if (status === 'error' && containerEl) {
+      containerEl.dispatchEvent(new CustomEvent('stage-error', {
+        bubbles: true,
+        detail: { stageIndex, stageName, message: data?.message || 'Unknown error' },
+      }));
+    }
   }
 
   function reset() {

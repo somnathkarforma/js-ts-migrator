@@ -841,6 +841,45 @@ input, textarea, select {
 }
 .btn-retry:hover { background: rgba(245,158,11,0.1); }
 
+/* ── STAGE ERROR MODAL ──────────────────────────────────── */
+.modal-box--error .modal-header {
+  border-bottom-color: rgba(239,68,68,0.25);
+}
+.modal-title--error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-accent-danger, #EF4444);
+}
+.stage-error-stage-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-muted, #9CA3AF);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 8px;
+}
+.stage-error-detail {
+  background: var(--color-bg-elevated, #0d1117);
+  border: 1px solid rgba(239,68,68,0.3);
+  border-radius: var(--radius-md);
+  color: #FCA5A5;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  padding: 12px 14px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 240px;
+  overflow-y: auto;
+  margin-bottom: 12px;
+}
+.stage-error-hint {
+  font-size: 13px;
+  color: var(--color-text-muted, #9CA3AF);
+  line-height: 1.5;
+}
+
 /* ── OUTPUT SECTION ──────────────────────────────────── */
 .output-section {
   border-top: 1px solid var(--color-border);

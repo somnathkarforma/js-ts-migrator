@@ -1317,6 +1317,10 @@ export default Transaction;
       cancelBtn:        document.getElementById('btn-cancel'),
       retryBtn:         document.getElementById('btn-retry'),
       migrateAction:    document.querySelector('.migrate-action'),
+      stageErrorModal:  document.getElementById('modal-stage-error'),
+      stageErrorTitle:  document.getElementById('modal-stage-error-title'),
+      stageErrorLabel:  document.getElementById('modal-stage-error-label'),
+      stageErrorDetail: document.getElementById('modal-stage-error-detail'),
       outputSection:    document.getElementById('output-section'),
       outputFileTabs:   document.getElementById('output-file-tabs'),
       codeViewerFilename: document.getElementById('code-viewer-filename'),
@@ -1338,6 +1342,16 @@ export default Transaction;
     FlowVisualizer.init('flow-container');
     updateMigrateButton();
     syncLineNumbers();
+
+    // Stage error popup — dispatched by FlowVisualizer when a stage fails
+    document.getElementById('flow-container').addEventListener('stage-error', (e) => {
+      const { stageName, stageIndex, message } = e.detail;
+      const safeMsg = (message || '').replace(/gsk_[0-9A-Za-z]{20,}/g, '[REDACTED]');
+      if (dom.stageErrorTitle)  Security.setTextSafe(dom.stageErrorTitle,  `${stageName} Failed`);
+      if (dom.stageErrorLabel)  Security.setTextSafe(dom.stageErrorLabel,  `Stage ${stageIndex + 1} of 6 — ${stageName}`);
+      if (dom.stageErrorDetail) Security.setTextSafe(dom.stageErrorDetail, safeMsg);
+      ModalManager.open('modal-stage-error');
+    });
 
     // ── Event Listeners ──────────────────────────────────
 
