@@ -1,7 +1,7 @@
 /* ═══════════════════════════════════════════════════════
    TS·FORGE — Migration Agent Engine (agent.js)
    API: Groq (free tier) — llama-3.3-70b-versatile (primary)
-                         — llama-3.1-8b-instant   (TPM fallback)
+                         — llama3-8b-8192        (TPM fallback, 30k TPM)
    ═══════════════════════════════════════════════════════ */
 
 'use strict';
@@ -214,7 +214,7 @@ identifier names from the migration data. Do not use placeholder text.`,
 
   // ── Retry + Model-Fallback Wrapper ────────────────────
   // On TPM rate-limit (tokens/min), automatically switches to the fallback
-  // model (llama-3.1-8b-instant, 131k TPM) before applying backoff.
+  // model (llama3-8b-8192, 30k TPM) before applying backoff.
   // On other 429s, waits for the Retry-After header duration.
   async function callGroqWithRetry(apiKey, systemPrompt, userPrompt, signal) {
     let lastError;
