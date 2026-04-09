@@ -159,13 +159,20 @@ Generate a JSON object with these keys:
   - appropriate module (CommonJS for Node, ESNext for browser/React)
   - paths configuration if needed
 
-"package_additions": Object with devDependencies to add (typescript, ts-node,
-  @types/* packages specific to detected framework and imports)
+"package_additions": Object with ALL devDependencies to add. You MUST include:
+  - "typescript": "^5.0.0"
+  - "ts-node": "^10.0.0"
+  - "@typescript-eslint/parser": "^7.0.0"
+  - "@typescript-eslint/eslint-plugin": "^7.0.0"
+  - PLUS every specific "@types/*" package needed for the imports list provided.
+    For example: if "express" is imported → add "@types/express"
+    if "lodash" → "@types/lodash", if "node" APIs (fs, path, etc.) → "@types/node"
+    Only include @types/* packages for modules that DO NOT ship their own types.
+    Do NOT add @types for: react (v18+), typescript itself, or ESM-only packages.
 
 "eslintrc": Complete .eslintrc.json for TypeScript ESLint
 
-"migrate_sh": Bash script that: installs devDependencies, runs tsc --init
-  (overwritten by our tsconfig), compiles, and reports errors
+"migrate_sh": Bash script that installs devDependencies and runs tsc --noEmit
 
 "migrate_ps1": PowerShell equivalent of migrate_sh
 
@@ -463,11 +470,82 @@ Return ONLY the complete TypeScript file. No explanation.`;
       const frameworks = [...new Set(analysisResults.map(r => r.analysis?.framework).filter(Boolean))];
       const moduleSystems = [...new Set(analysisResults.map(r => r.analysis?.module_system).filter(Boolean))];
 
+      // Collect all unique external imports across all files for @types resolution
+      const allImports = new Set();
+      analysisResults.forEach(r => {
+        const imports = r.analysis?.imports || r.analysis?.dependencies || [];
+        (Array.isArray(imports) ? imports : []).forEach(imp => {
+          // Only include non-relative, non-builtin-typescript imports
+          if (typeof imp === 'string' && !imp.startsWith('.') && !imp.startsWith('/')) {
+            allImports.add(imp.split('/')[0]); // strip subpaths (e.g. lodash/fp → lodash)
+          }
+        });
+      });
+
+      // Deterministic @types mapping for the most common packages
+      // These are ALWAYS added when the corresponding package is imported,
+      // regardless of what the AI decides, so we never miss a critical @types.
+      const KNOWN_TYPES = {
+        'express':         '@types/express',
+        'lodash':          '@types/lodash',
+        'node':            '@types/node',
+        'jest':            '@types/jest',
+        'mocha':           '@types/mocha',
+        'chai':            '@types/chai',
+        'body-parser':     '@types/body-parser',
+        'cors':            '@types/cors',
+        'multer':          '@types/multer',
+        'passport':        '@types/passport',
+        'jsonwebtoken':    '@types/jsonwebtoken',
+        'bcrypt':          '@types/bcrypt',
+        'uuid':            '@types/uuid',
+        'mime':            '@types/mime',
+        'semver':          '@types/semver',
+        'glob':            '@types/glob',
+        'minimist':        '@types/minimist',
+        'yargs':           '@types/yargs',
+        'marked':          '@types/marked',
+        'sanitize-html':   '@types/sanitize-html',
+        'supertest':       '@types/supertest',
+        'sinon':           '@types/sinon',
+        'pg':              '@types/pg',
+        'mysql':           '@types/mysql',
+        'redis':           '@types/redis',
+        'ws':              '@types/ws',
+        'morgan':          '@types/morgan',
+        'cookie-parser':   '@types/cookie-parser',
+        'compression':     '@types/compression',
+        'dotenv':          'dotenv',   // dotenv ships its own types
+        'axios':           'axios',    // axios ships its own types
+        'zod':             'zod',      // zod ships its own types
+      };
+      // Always add @types/node if any Node built-ins are imported
+      const NODE_BUILTINS = new Set(['fs','path','os','http','https','crypto','stream',
+        'util','events','child_process','net','url','querystring','readline','buffer',
+        'process','cluster','vm','assert','tty','dns','dgram','v8','worker_threads']);
+      const needsNodeTypes = analysisResults.some(r => {
+        const imports = r.analysis?.imports || r.analysis?.dependencies || [];
+        return (Array.isArray(imports) ? imports : []).some(i => NODE_BUILTINS.has(i));
+      });
+      if (needsNodeTypes) allImports.add('node');
+
+      const deterministicTypes = {};
+      allImports.forEach(pkg => {
+        if (KNOWN_TYPES[pkg] && KNOWN_TYPES[pkg].startsWith('@types/')) {
+          deterministicTypes[KNOWN_TYPES[pkg]] = 'latest';
+        }
+      });
+
       const prompt = `Based on this codebase analysis:
 - Frameworks detected: ${frameworks.join(', ') || 'none'}
 - Module systems: ${moduleSystems.join(', ') || 'unknown'}
 - Files in project: ${Object.keys(transformed).join(', ')}
 - Number of source files: ${analysisResults.length}
+- External packages imported: ${[...allImports].join(', ') || 'none (no external imports detected)'}
+- Deterministically required @types already identified: ${JSON.stringify(deterministicTypes)}
+
+Include ALL packages from "Deterministically required @types" in package_additions, plus any
+additional @types/* you identify from the imports list that are not already covered.
 
 Generate the TypeScript configuration files.`;
 
@@ -501,6 +579,15 @@ Generate the TypeScript configuration files.`;
           migrate_ps1: 'npm install\nnpx tsc --noEmit\nWrite-Host "Migration check complete"',
         };
       }
+
+      // Always merge in the deterministically identified @types packages
+      // so even if the AI forgot some, they are always present in the output
+      config.package_additions = Object.assign(
+        { typescript: '^5.0.0', 'ts-node': '^10.0.0',
+          '@typescript-eslint/parser': '^7.0.0', '@typescript-eslint/eslint-plugin': '^7.0.0' },
+        deterministicTypes,
+        config.package_additions || {}
+      );
 
       // Add config files to output
       const configFiles = {};
@@ -542,6 +629,20 @@ Generate the TypeScript configuration files.`;
         return `${r.file}: ${JSON.stringify(counts)}`;
       }).join('\n');
 
+      // Build the exact npm install command from resolved package_additions
+      const pkgAdditions = config?.package_additions || configFiles['package-types-additions.json']
+        ? (() => { try { return JSON.parse(configFiles['package-types-additions.json'] || '{}'); } catch(_){ return {}; } })()
+        : { typescript: '^5.0.0', 'ts-node': '^10.0.0' };
+      // parse from stored file since config was already converted above
+      let installCmd = 'npm install --save-dev';
+      try {
+        const stored = configFiles['package-types-additions.json'];
+        if (stored) {
+          const pkgs = JSON.parse(stored);
+          installCmd = 'npm install --save-dev ' + Object.keys(pkgs).join(' ');
+        }
+      } catch (_) {}
+
       const prompt = `Produce a migration report for this JavaScript→TypeScript migration:
 
 Files processed: ${files.map(f => f.name).join(', ')}
@@ -553,9 +654,17 @@ Type inference summary by file:
 ${typeMapSummary}
 
 Config files generated: ${Object.keys(configFiles).join(', ')}
+Install command to use: \`${installCmd}\`
 
 Analysis results summary:
 ${analysisResults.map((r, i) => `${files[i]?.name}: framework=${r.analysis?.framework}, module=${r.analysis?.module_system}, jsdoc=${r.analysis?.jsdoc_coverage}%`).join('\n')}
+
+IMPORTANT: In the "Dependencies to Install" section, output the EXACT install command as a
+fenced code block:
+\`\`\`bash
+${installCmd}
+\`\`\`
+Do NOT say "@types packages are not listed". Use the above exact list.
 
 Write the full migration report in Markdown.`;
 

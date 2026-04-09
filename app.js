@@ -927,6 +927,23 @@ const TSForgeApp = (() => {
       // Render markdown as safe HTML
       const html = this.parseMarkdown(markdownText);
       dom.reportContent.innerHTML = html;
+
+      // Wire copy buttons on code blocks (they're static SVG + data-target, safe)
+      dom.reportContent.querySelectorAll('.btn-copy-code-block').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const targetId = btn.dataset.target;
+          const codeEl = document.getElementById(targetId);
+          if (!codeEl) return;
+          try {
+            await navigator.clipboard.writeText(codeEl.textContent);
+            const orig = btn.innerHTML;
+            btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><polyline points="20 6 9 17 4 12"/></svg> Copied!';
+            setTimeout(() => { btn.innerHTML = orig; }, 2000);
+          } catch (_) {
+            Toast.show('error', 'Copy failed', 'Could not access clipboard.');
+          }
+        });
+      });
     },
 
     /**
@@ -980,8 +997,13 @@ const TSForgeApp = (() => {
       html = html.replace(/^##\s+(.+)/gm,     '<h2>$1</h2>');
       html = html.replace(/^#\s+(.+)/gm,      '<h1>$1</h1>');
 
-      // Code blocks
-      html = html.replace(/```[\w]*\n([\s\S]*?)```/g, (_, code) => `<pre><code>${code.trimEnd()}</code></pre>`);
+      // Code blocks — add a copy button for each
+      html = html.replace(/```[\w]*\n([\s\S]*?)```/g, (_, code) => {
+        const id = `codeblock-${Math.random().toString(36).slice(2, 8)}`;
+        return `<div class="report-code-block"><pre><code id="${id}">${code.trimEnd()}</code></pre>` +
+               `<button class="btn-copy-code-block" data-target="${id}" type="button" aria-label="Copy code">` +
+               `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Copy</button></div>`;
+      });
 
       // Inline code
       html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
