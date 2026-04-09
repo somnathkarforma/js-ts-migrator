@@ -1136,18 +1136,20 @@ const TSForgeApp = (() => {
   // ── Update Migrate Button State ───────────────────────
   function updateMigrateButton() {
     const hasKey = Boolean(state.apiKey);
-    const hasInput = state.files.length > 0 ||
-                     (state.currentTab === 'paste' && dom.codePaste?.value?.trim().length > 0);
+    const pasteHasCode = state.currentTab === 'paste' && dom.codePaste?.value?.trim().length > 0;
+    const hasInput = state.files.length > 0 || pasteHasCode;
 
-    const canMigrate = hasKey && (hasInput || state.currentTab === 'paste');
+    const canMigrate = hasKey && hasInput;
 
     dom.migrateBtn.disabled = !canMigrate;
     dom.migrateBtn.setAttribute('aria-disabled', canMigrate ? 'false' : 'true');
 
-    if (!hasKey) {
-      Security.setTextSafe(dom.migrateHint, 'Enter your API key and save it to begin');
-    } else if (!hasInput && state.currentTab !== 'paste') {
-      Security.setTextSafe(dom.migrateHint, 'Add files or paste code to migrate');
+    if (!hasKey && !hasInput) {
+      Security.setTextSafe(dom.migrateHint, 'Save your Gemini API key and add code to begin');
+    } else if (!hasKey) {
+      Security.setTextSafe(dom.migrateHint, 'Enter your Gemini API key (AIza...) and click Save');
+    } else if (!hasInput) {
+      Security.setTextSafe(dom.migrateHint, 'Add files or paste JavaScript code to migrate');
     } else {
       Security.setTextSafe(dom.migrateHint, '');
     }
