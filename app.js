@@ -15,6 +15,7 @@ const TSForgeApp = (() => {
     abortController: null,
     currentTab: 'file', // 'file' | 'paste' | 'github'
     githubFiles: [],
+    retryState: null,   // { files, fromStage, partial } — set after recoverable failure
   };
 
   // ── DOM References ───────────────────────────────────
@@ -1015,16 +1016,18 @@ const TSForgeApp = (() => {
   };
 
   // ── Migration Action ──────────────────────────────────
-  async function startMigration() {
+  async function startMigration(resumeFrom = null) {
     const apiKey = ApiKeyManager.get();
     if (!apiKey) {
-      Toast.show('error', 'No API Key', 'Please enter and save your Anthropic API key.');
+      Toast.show('error', 'No API Key', 'Please enter and save your Groq API key.');
       return;
     }
 
-    // Collect input based on active tab
+    // Collect input — use saved files when resuming, otherwise read from UI
     let files = [];
-    if (state.currentTab === 'file') {
+    if (resumeFrom) {
+      files = resumeFrom.files;
+    } else if (state.currentTab === 'file') {
       files = [...state.files];
     } else if (state.currentTab === 'paste') {
       const code = dom.codePaste.value.trim();
@@ -1042,6 +1045,13 @@ const TSForgeApp = (() => {
       return;
     }
 
+    // Clear previous retry state and hide retry button
+    state.retryState = null;
+    if (dom.retryBtn) dom.retryBtn.style.display = 'none';
+
+    // On fresh start, reset the flow visualizer
+    if (!resumeFrom) FlowVisualizer.reset();
+
     state.migrationActive = true;
     state.abortController = new AbortController();
 
@@ -1051,11 +1061,12 @@ const TSForgeApp = (() => {
     dom.migrateBtn.setAttribute('aria-disabled', 'true');
     Security.setTextSafe(dom.migrateBtnLabel, 'Migrating…');
     dom.cancelBtn.style.display = 'inline-flex';
-    dom.outputSection.hidden = true;
-    dom.reportSection.hidden = true;
+    if (!resumeFrom) {
+      dom.outputSection.hidden = true;
+      dom.reportSection.hidden = true;
+    }
 
     // Progress bar
-    let progressBar;
     if (!dom.progressBarWrap) {
       const wrap = document.createElement('div');
       wrap.className = 'progress-bar-wrap';
@@ -1069,11 +1080,16 @@ const TSForgeApp = (() => {
       dom.progressBar = bar;
     }
     dom.progressBarWrap.style.display = 'block';
-    dom.progressBar.style.width = '0';
+    // On resume, start the bar from where the previous run got to
+    const startPct = resumeFrom ? Math.round((resumeFrom.fromStage / 6) * 100) : 0;
+    dom.progressBar.style.width = `${startPct}%`;
     dom.progressBar.classList.add('animate-indeterminate');
 
     try {
-      const result = await MigrationAgent.run(files, apiKey, onStageUpdate, state.abortController.signal);
+      const agentResume = resumeFrom
+        ? { fromStage: resumeFrom.fromStage, partial: resumeFrom.partial }
+        : null;
+      const result = await MigrationAgent.run(files, apiKey, onStageUpdate, state.abortController.signal, agentResume);
       handleMigrationResult(result);
     } catch (err) {
       if (err.name === 'AbortError') {
@@ -1083,6 +1099,21 @@ const TSForgeApp = (() => {
         const safeMsg = (err.message || '').replace(/gsk_[0-9A-Za-z]{20,}/g, '[REDACTED]');
         Toast.show('error', 'Migration Failed', safeMsg);
         logger.error('Migration failed:', safeMsg);
+
+        // Offer resume-from-stage if we have partial results
+        if (err.partialResults != null && err.failedAtStage != null) {
+          state.retryState = {
+            files,
+            fromStage: err.failedAtStage,
+            partial:   err.partialResults,
+          };
+          if (dom.retryBtn) {
+            const stageName = MigrationAgent.STAGES[err.failedAtStage]?.name
+              || `Stage ${err.failedAtStage + 1}`;
+            Security.setTextSafe(dom.retryBtn, `↻ Retry from “${stageName}”`);
+            dom.retryBtn.style.display = 'inline-flex';
+          }
+        }
       }
     } finally {
       state.migrationActive = false;
@@ -1284,6 +1315,7 @@ export default Transaction;
       migrateBtnLabel:  document.querySelector('.btn-migrate-label'),
       migrateHint:      document.getElementById('migrate-hint'),
       cancelBtn:        document.getElementById('btn-cancel'),
+      retryBtn:         document.getElementById('btn-retry'),
       migrateAction:    document.querySelector('.migrate-action'),
       outputSection:    document.getElementById('output-section'),
       outputFileTabs:   document.getElementById('output-file-tabs'),
@@ -1401,6 +1433,13 @@ export default Transaction;
     // Migrate
     dom.migrateBtn.addEventListener('click', () => {
       if (!state.migrationActive) startMigration();
+    });
+
+    // Retry from failed stage
+    dom.retryBtn.addEventListener('click', () => {
+      if (!state.migrationActive && state.retryState) {
+        startMigration(state.retryState);
+      }
     });
 
     // Cancel

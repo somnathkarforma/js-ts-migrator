@@ -1,16 +1,20 @@
 /* ═══════════════════════════════════════════════════════
    TS·FORGE — Migration Agent Engine (agent.js)
-   API: Groq (free tier) — llama-3.3-70b-versatile
+   API: Groq (free tier) — llama-3.3-70b-versatile (primary)
+                         — llama-3.1-8b-instant   (TPM fallback)
    ═══════════════════════════════════════════════════════ */
 
 'use strict';
 
 const MigrationAgent = (() => {
   // ── Constants ─────────────────────────────────────────
-  const MODEL = 'llama-3.3-70b-versatile';
+  // Models tried in order. On TPM-rate-limit (429 tokens/min), the engine
+  // automatically falls back to the next model in the list.
+  // llama-3.3-70b: 12,000 TPM free | llama-3.1-8b: 131,072 TPM free
+  const MODELS = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'];
   const MAX_OUTPUT_TOKENS = 8192;
-  const MAX_TOKENS_PER_BATCH = 4000;
-  const MAX_RETRIES = 3;
+  const MAX_TOKENS_PER_BATCH = 2000;  // reduced from 4000 to stay under 12k TPM/min
+  const MAX_RETRIES = 4;
   const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
 
   const STAGES = [
@@ -171,8 +175,8 @@ identifier names from the migration data. Do not use placeholder text.`,
 
   // ── Core API Caller ───────────────────────────────────
   // Groq uses OpenAI-compatible Chat Completions API.
-  // Free tier: 14,400 req/day, 6,000 tokens/min — no billing required.
-  async function callGroq(apiKey, systemPrompt, userPrompt, signal) {
+  // Free tier: 14,400 req/day — no billing required.
+  async function callGroq(apiKey, systemPrompt, userPrompt, signal, model) {
     const response = await fetch(GROQ_API_URL, {
       method: 'POST',
       headers: {
@@ -180,7 +184,7 @@ identifier names from the migration data. Do not use placeholder text.`,
         'Authorization': `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: MODEL,
+        model,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user',   content: userPrompt },
@@ -192,9 +196,14 @@ identifier names from the migration data. Do not use placeholder text.`,
     });
 
     if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      const msg = err?.error?.message || `API error ${response.status}`;
-      throw new Error(msg);
+      // Read Retry-After header so callers can respect rate-limit windows
+      const retryAfterSec = response.headers.get('retry-after');
+      const errData = await response.json().catch(() => ({}));
+      const msg = errData?.error?.message || `API error ${response.status}`;
+      const error = new Error(msg);
+      error.status = response.status;
+      error.retryAfterMs = retryAfterSec ? parseFloat(retryAfterSec) * 1000 : null;
+      throw error;
     }
 
     const data = await response.json();
@@ -203,18 +212,25 @@ identifier names from the migration data. Do not use placeholder text.`,
     return text;
   }
 
-  // ── Exponential Backoff Wrapper ───────────────────────
+  // ── Retry + Model-Fallback Wrapper ────────────────────
+  // On TPM rate-limit (tokens/min), automatically switches to the fallback
+  // model (llama-3.1-8b-instant, 131k TPM) before applying backoff.
+  // On other 429s, waits for the Retry-After header duration.
   async function callGroqWithRetry(apiKey, systemPrompt, userPrompt, signal) {
     let lastError;
+    let modelIdx = 0;  // indexes into MODELS[]
+
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
       try {
         if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
-        return await callGroq(apiKey, systemPrompt, userPrompt, signal);
+        return await callGroq(apiKey, systemPrompt, userPrompt, signal, MODELS[modelIdx]);
       } catch (err) {
         if (err.name === 'AbortError') throw err;
         lastError = err;
 
-        const isRetryable = err.message?.includes('429') ||
+        const is429 = err.status === 429 || err.message?.includes('429');
+        const isTPM = err.message?.includes('tokens per minute');
+        const isRetryable = is429 ||
                             err.message?.includes('500') ||
                             err.message?.includes('503') ||
                             err.message?.includes('overloaded') ||
@@ -222,7 +238,17 @@ identifier names from the migration data. Do not use placeholder text.`,
 
         if (!isRetryable || attempt === MAX_RETRIES - 1) throw err;
 
-        const delay = Math.pow(2, attempt) * 1000 + Math.random() * 500;
+        // Token-per-minute limit? Switch to faster fallback model immediately
+        if (isTPM && modelIdx < MODELS.length - 1) {
+          modelIdx++;
+          continue;  // no delay — just switch model
+        }
+
+        // Respect Retry-After header if present, else exponential backoff
+        const delay = (err.retryAfterMs != null)
+          ? err.retryAfterMs + Math.random() * 2000
+          : Math.pow(2, attempt) * 2000 + Math.random() * 1000;
+
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
@@ -507,9 +533,12 @@ Write the full migration report in Markdown.`;
    * @param {string} apiKey
    * @param {Function} onStageUpdate - (stageIndex, status, data) => void
    * @param {AbortSignal} signal
+   * @param {{ fromStage: number, partial: Object }|null} resumeFrom
+   *   Pass this to resume a previously failed run from the failing stage,
+   *   reusing already-computed results. Set to null for a fresh run.
    * @returns {Promise<{outputFiles: Object, report: string}>}
    */
-  async function run(files, apiKey, onStageUpdate, signal) {
+  async function run(files, apiKey, onStageUpdate, signal, resumeFrom = null) {
     if (!files || files.length === 0) throw new Error('No files provided');
     if (!apiKey) throw new Error('No API key provided');
 
@@ -517,28 +546,66 @@ Write the full migration report in Markdown.`;
       try { onStageUpdate(index, status, data); } catch (_) {}
     };
 
-    // Stage 1 — Analysis
-    const analysisResults = await stageAnalysis(files, apiKey, signal, notify);
+    const fromStage = resumeFrom?.fromStage ?? 0;
+    const saved     = resumeFrom?.partial   ?? {};
 
-    // Stage 2 — Type Inference
-    const typeResults = await stageTypeInference(files, analysisResults, apiKey, signal, notify);
+    // Replay already-completed stages in the flow UI without re-running them
+    for (let i = 0; i < fromStage; i++) notify(i, 'complete', {});
 
-    // Stage 3 — Interface Generation
-    const interfaceBlocks = await stageInterfaceGeneration(files, analysisResults, typeResults, apiKey, signal, notify);
+    // partial accumulates results so a future failure can be retried
+    const partial = { ...saved };
+    // currentStage tracks which stage is active when an error is thrown
+    let currentStage = fromStage;
 
-    // Stage 4 — Code Transformation
-    const transformed = await stageCodeTransformation(files, analysisResults, typeResults, interfaceBlocks, apiKey, signal, notify);
+    try {
+      let analysisResults  = saved.analysisResults  ?? null;
+      let typeResults      = saved.typeResults      ?? null;
+      let interfaceBlocks  = saved.interfaceBlocks  ?? null;
+      let transformed      = saved.transformed      ?? null;
+      let configFiles      = saved.configFiles      ?? null;
 
-    // Stage 5 — Config Generation
-    const configFiles = await stageConfigGeneration(analysisResults, transformed, apiKey, signal, notify);
+      currentStage = 0;
+      if (fromStage <= 0) {
+        analysisResults = await stageAnalysis(files, apiKey, signal, notify);
+        partial.analysisResults = analysisResults;
+      }
 
-    // Stage 6 — Report Generation
-    const report = await stageReportGeneration(files, analysisResults, typeResults, transformed, configFiles, apiKey, signal, notify);
+      currentStage = 1;
+      if (fromStage <= 1) {
+        typeResults = await stageTypeInference(files, analysisResults, apiKey, signal, notify);
+        partial.typeResults = typeResults;
+      }
 
-    // Merge all output files
-    const outputFiles = { ...transformed, ...configFiles };
+      currentStage = 2;
+      if (fromStage <= 2) {
+        interfaceBlocks = await stageInterfaceGeneration(files, analysisResults, typeResults, apiKey, signal, notify);
+        partial.interfaceBlocks = interfaceBlocks;
+      }
 
-    return { outputFiles, report };
+      currentStage = 3;
+      if (fromStage <= 3) {
+        transformed = await stageCodeTransformation(files, analysisResults, typeResults, interfaceBlocks, apiKey, signal, notify);
+        partial.transformed = transformed;
+      }
+
+      currentStage = 4;
+      if (fromStage <= 4) {
+        configFiles = await stageConfigGeneration(analysisResults, transformed, apiKey, signal, notify);
+        partial.configFiles = configFiles;
+      }
+
+      currentStage = 5;
+      const report = await stageReportGeneration(files, analysisResults, typeResults, transformed, configFiles, apiKey, signal, notify);
+
+      return { outputFiles: { ...transformed, ...configFiles }, report };
+    } catch (err) {
+      // Attach partial results so the caller can offer a "resume" retry
+      if (err.name !== 'AbortError') {
+        err.failedAtStage  = currentStage;
+        err.partialResults = partial;
+      }
+      throw err;
+    }
   }
 
   // ── Public API ────────────────────────────────────────
