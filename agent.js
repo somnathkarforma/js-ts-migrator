@@ -1,17 +1,25 @@
 /* ═══════════════════════════════════════════════════════
    TS·FORGE — Migration Agent Engine (agent.js)
-   API: Groq (free tier) — llama-3.3-70b-versatile (primary)
-                         — meta-llama/llama-4-scout-17b-16e-instruct (TPM fallback, 30k TPM)
+   API: Groq (free tier)
+     Model 1 (primary):  llama-3.3-70b-versatile       — 12k TPM / 100k TPD
+     Model 2 (fallback): llama-4-scout-17b-16e-instruct — 30k TPM / 500k TPD
+     Model 3 (fallback): gemma2-9b-it                  — 15k TPM / 500k TPD
    ═══════════════════════════════════════════════════════ */
 
 'use strict';
 
 const MigrationAgent = (() => {
   // ── Constants ─────────────────────────────────────────
-  // Models tried in order. On TPM-rate-limit (429 tokens/min), the engine
-  // automatically falls back to the next model in the list.
-  // llama-3.3-70b: 12,000 TPM free | llama-4-scout-17b: 30,000 TPM free
-  const MODELS = ['llama-3.3-70b-versatile', 'meta-llama/llama-4-scout-17b-16e-instruct'];
+  // Models tried in order. On any rate-limit (429 TPM *or* TPD), the engine
+  // permanently advances to the next model for the remainder of the run.
+  // llama-3.3-70b:  12k TPM / 100k TPD free
+  // llama-4-scout:  30k TPM / 500k TPD free
+  // gemma2-9b-it:   15k TPM / 500k TPD free  (separate daily bucket)
+  const MODELS = [
+    'llama-3.3-70b-versatile',
+    'meta-llama/llama-4-scout-17b-16e-instruct',
+    'gemma2-9b-it',
+  ];
   const MAX_OUTPUT_TOKENS = 4096;  // reduced from 8192 — Groq charges both input+output against TPM
   const MAX_TOKENS_PER_BATCH = 2000;  // reduced from 4000 to stay under 12k TPM/min
   const MAX_RETRIES = 6;
@@ -252,24 +260,43 @@ identifier names from the migration data. Do not use placeholder text.`,
         lastError = err;
 
         const is429   = err.status === 429 || err.message?.includes('429');
-        const isTPM   = is429 && (
+
+        // Treat *any* rate-limit signal (TPM *or* TPD) as a model-switch trigger.
+        // The old code only matched "tokens per minute" — TPD errors said
+        // "tokens per day (TPD)" and fell through to plain backoff, causing hangs.
+        const isRateLimit = is429 && (
           err.message?.includes('tokens per minute') ||
+          err.message?.includes('tokens per day') ||
           err.message?.includes('TPM') ||
+          err.message?.includes('TPD') ||
           err.message?.includes('rate_limit_exceeded') ||
-          err.message?.includes('Request too large')
+          err.message?.includes('Request too large') ||
+          err.message?.includes('rate limit')
         );
+
         const isRetryable = is429 ||
                             err.message?.includes('500') ||
                             err.message?.includes('503') ||
                             err.message?.includes('overloaded') ||
                             err.message?.includes('rate');
 
-        if (!isRetryable || attempt === MAX_RETRIES - 1) throw err;
+        if (!isRetryable || attempt === MAX_RETRIES - 1) {
+          // If all models are exhausted, enrich the error with a human-readable
+          // wait hint parsed from the Groq error message (e.g. "1h6m19.584s").
+          if (is429 && _activeModelIdx >= MODELS.length - 1) {
+            const waitMatch = err.message?.match(/Please try again in ([^.]+\.\d+s|\.?[\dhms ]+)/);
+            const waitHint  = waitMatch ? ` Please wait ${waitMatch[1].trim()} and try again.` : ' All fallback models are also rate-limited — please wait and retry.';
+            const enriched  = new Error(`All ${MODELS.length} models exhausted.${waitHint}`);
+            enriched.status = 429;
+            throw enriched;
+          }
+          throw err;
+        }
 
-        if (isTPM && _activeModelIdx < MODELS.length - 1) {
-          // Permanently advance to fallback model for this whole migration run
+        if (isRateLimit && _activeModelIdx < MODELS.length - 1) {
+          // Permanently advance to next fallback for this whole migration run
           _activeModelIdx++;
-          // Brief settle so the new model's TPM window is clean
+          // Brief settle so the new model's rate-limit window is clean
           await new Promise(resolve => setTimeout(resolve, 3000 + Math.random() * 2000));
           continue;
         }
