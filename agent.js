@@ -1,17 +1,17 @@
 /* ═══════════════════════════════════════════════════════
    TS·FORGE — Migration Agent Engine (agent.js)
-   API: Google Gemini 2.0 Flash (free tier)
+   API: Groq (free tier) — llama-3.3-70b-versatile
    ═══════════════════════════════════════════════════════ */
 
 'use strict';
 
 const MigrationAgent = (() => {
   // ── Constants ─────────────────────────────────────────
-  const MODEL = 'gemini-2.0-flash';
+  const MODEL = 'llama-3.3-70b-versatile';
   const MAX_OUTPUT_TOKENS = 8192;
   const MAX_TOKENS_PER_BATCH = 4000;
   const MAX_RETRIES = 3;
-  const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
+  const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
 
   const STAGES = [
     { index: 0, name: 'Codebase Analyzer',   desc: 'Extracting structure and patterns' },
@@ -170,18 +170,23 @@ identifier names from the migration data. Do not use placeholder text.`,
   };
 
   // ── Core API Caller ───────────────────────────────────
-  async function callGemini(apiKey, systemPrompt, userPrompt, signal) {
-    const url = `${GEMINI_BASE}/${MODEL}:generateContent?key=${apiKey}`;
-    const response = await fetch(url, {
+  // Groq uses OpenAI-compatible Chat Completions API.
+  // Free tier: 14,400 req/day, 6,000 tokens/min — no billing required.
+  async function callGroq(apiKey, systemPrompt, userPrompt, signal) {
+    const response = await fetch(GROQ_API_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
       body: JSON.stringify({
-        systemInstruction: { parts: [{ text: systemPrompt }] },
-        contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
-        generationConfig: {
-          maxOutputTokens: MAX_OUTPUT_TOKENS,
-          temperature: 0.2,
-        },
+        model: MODEL,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user',   content: userPrompt },
+        ],
+        max_tokens: MAX_OUTPUT_TOKENS,
+        temperature: 0.2,
       }),
       signal,
     });
@@ -193,18 +198,18 @@ identifier names from the migration data. Do not use placeholder text.`,
     }
 
     const data = await response.json();
-    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!text) throw new Error('Empty response from Gemini API');
+    const text = data?.choices?.[0]?.message?.content;
+    if (!text) throw new Error('Empty response from Groq API');
     return text;
   }
 
   // ── Exponential Backoff Wrapper ───────────────────────
-  async function callGeminiWithRetry(apiKey, systemPrompt, userPrompt, signal) {
+  async function callGroqWithRetry(apiKey, systemPrompt, userPrompt, signal) {
     let lastError;
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
       try {
         if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
-        return await callGemini(apiKey, systemPrompt, userPrompt, signal);
+        return await callGroq(apiKey, systemPrompt, userPrompt, signal);
       } catch (err) {
         if (err.name === 'AbortError') throw err;
         lastError = err;
@@ -261,7 +266,7 @@ identifier names from the migration data. Do not use placeholder text.`,
     for (const file of files) {
       const truncated = file.content.slice(0, MAX_TOKENS_PER_BATCH * 3);
       const prompt = `Analyze this JavaScript file named "${file.name}":\n\n\`\`\`javascript\n${truncated}\n\`\`\``;
-      const raw = await callGeminiWithRetry(apiKey, SYSTEM_PROMPTS.analysis, prompt, signal);
+      const raw = await callGroqWithRetry(apiKey, SYSTEM_PROMPTS.analysis, prompt, signal);
       let analysis;
       try {
         analysis = extractJson(raw);
@@ -299,7 +304,7 @@ ${file.content.slice(0, MAX_TOKENS_PER_BATCH * 2)}
 
 Produce the type mapping.`;
 
-      const raw = await callGeminiWithRetry(apiKey, SYSTEM_PROMPTS.typeInference, prompt, signal);
+      const raw = await callGroqWithRetry(apiKey, SYSTEM_PROMPTS.typeInference, prompt, signal);
       let typeMap;
       try {
         const parsed = extractJson(raw);
@@ -336,7 +341,7 @@ ${JSON.stringify({ analysis, typeMap }, null, 2).slice(0, 2000)}
 
 Generate all necessary TypeScript interfaces, type aliases, and enums.`;
 
-      const interfaces = await callGeminiWithRetry(apiKey, SYSTEM_PROMPTS.interfaces, prompt, signal);
+      const interfaces = await callGroqWithRetry(apiKey, SYSTEM_PROMPTS.interfaces, prompt, signal);
       // Extract from code block if present
       const clean = interfaces.replace(/```typescript\n?/g, '').replace(/```\n?/g, '').trim();
       interfaceBlocks.push({ file: file.name, interfaces: clean });
@@ -372,7 +377,7 @@ ${file.content.slice(0, MAX_TOKENS_PER_BATCH * 3)}
 
 Return ONLY the complete TypeScript file. No explanation.`;
 
-      const tsCode = await callGeminiWithRetry(apiKey, SYSTEM_PROMPTS.transform, prompt, signal);
+      const tsCode = await callGroqWithRetry(apiKey, SYSTEM_PROMPTS.transform, prompt, signal);
 
       // Clean up code block markers if present
       let clean = tsCode.replace(/^```typescript\n?/m, '').replace(/^```ts\n?/m, '').replace(/```\s*$/m, '').trim();
@@ -405,7 +410,7 @@ Return ONLY the complete TypeScript file. No explanation.`;
 
 Generate the TypeScript configuration files.`;
 
-    const raw = await callGeminiWithRetry(apiKey, SYSTEM_PROMPTS.config, prompt, signal);
+    const raw = await callGroqWithRetry(apiKey, SYSTEM_PROMPTS.config, prompt, signal);
     let config;
     try {
       config = extractJson(raw);
@@ -489,7 +494,7 @@ ${analysisResults.map((r, i) => `${files[i]?.name}: framework=${r.analysis?.fram
 
 Write the full migration report in Markdown.`;
 
-    const report = await callGeminiWithRetry(apiKey, SYSTEM_PROMPTS.report, prompt, signal);
+    const report = await callGroqWithRetry(apiKey, SYSTEM_PROMPTS.report, prompt, signal);
 
     onStageUpdate(5, 'complete', { reviewItems, totalLines });
     return report;

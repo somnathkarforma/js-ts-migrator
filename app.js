@@ -32,7 +32,7 @@ const TSForgeApp = (() => {
     function _log(level, ...args) {
       const msg = args.map(String).join(' ');
       // Avoid leaking sensitive data — strip any key-like patterns before logging
-      const safe = msg.replace(/AIza[0-9A-Za-z_-]{35,}/g, '[REDACTED]');
+      const safe = msg.replace(/gsk_[0-9A-Za-z]{20,}/g, '[REDACTED]');
       const fn = level === 'error' ? console.error : level === 'warn' ? console.warn : console.info;
       fn(`[TS·FORGE][${level.toUpperCase()}]`, safe);
     }
@@ -71,8 +71,8 @@ const TSForgeApp = (() => {
      * Validate API key format.
      */
     isValidApiKey(key) {
-      // Gemini API keys: start with AIza, ~39 chars total
-      return /^AIza[0-9A-Za-z_-]{30,}$/.test(key);
+      // Groq API keys: start with gsk_ followed by alphanumeric and underscores
+      return /^gsk_[0-9A-Za-z]{20,}$/.test(key);
     },
 
     /**
@@ -162,7 +162,7 @@ const TSForgeApp = (() => {
         return;
       }
       if (!Security.isValidApiKey(raw)) {
-        Toast.show('error', 'Invalid Key Format', 'Gemini API keys start with AIza and are ~39 characters long.');
+        Toast.show('error', 'Invalid Key Format', 'Groq API keys start with gsk_ — get one free at console.groq.com');
         dom.keyStatus.className = 'key-status invalid';
         Security.setTextSafe(dom.keyStatus, '✕ Invalid format');
         return;
@@ -467,7 +467,7 @@ const TSForgeApp = (() => {
         }
       } catch (e) {
         const msg = e.message || 'Unknown error';
-      Toast.show('error', 'Fetch Failed', msg.replace(/AIza[0-9A-Za-z_-]{35,}/g, '[REDACTED]'));
+      Toast.show('error', 'Fetch Failed', msg.replace(/gsk_[0-9A-Za-z]{20,}/g, '[REDACTED]'));
       } finally {
         dom.fetchGithubBtn.disabled = false;
         Security.setTextSafe(dom.fetchGithubBtn, 'Fetch');
@@ -1080,7 +1080,7 @@ const TSForgeApp = (() => {
         Toast.show('info', 'Migration cancelled', 'You cancelled the migration.');
         FlowVisualizer.reset();
       } else {
-        const safeMsg = (err.message || '').replace(/AIza[0-9A-Za-z_-]{35,}/g, '[REDACTED]');
+        const safeMsg = (err.message || '').replace(/gsk_[0-9A-Za-z]{20,}/g, '[REDACTED]');
         Toast.show('error', 'Migration Failed', safeMsg);
         logger.error('Migration failed:', safeMsg);
       }
@@ -1145,9 +1145,9 @@ const TSForgeApp = (() => {
     dom.migrateBtn.setAttribute('aria-disabled', canMigrate ? 'false' : 'true');
 
     if (!hasKey && !hasInput) {
-      Security.setTextSafe(dom.migrateHint, 'Save your Gemini API key and add code to begin');
+      Security.setTextSafe(dom.migrateHint, 'Save your Groq API key and add code to begin');
     } else if (!hasKey) {
-      Security.setTextSafe(dom.migrateHint, 'Enter your Gemini API key (AIza...) and click Save');
+      Security.setTextSafe(dom.migrateHint, 'Enter your Groq API key (gsk_...) and click Save');
     } else if (!hasInput) {
       Security.setTextSafe(dom.migrateHint, 'Add files or paste JavaScript code to migrate');
     } else {
