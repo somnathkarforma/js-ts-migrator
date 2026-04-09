@@ -732,6 +732,11 @@ const TSForgeApp = (() => {
 
       const content = state.outputFiles[filename] || '';
       this.renderCode(filename, content);
+
+      // If there are pending review decisions, overlay them on the rendered code
+      if (ReviewManager._items.length > 0) {
+        ReviewManager._rerenderViewer();
+      }
     },
 
     renderCode(filename, content) {
@@ -1137,6 +1142,187 @@ const TSForgeApp = (() => {
     dom.progressBar.style.width = `${progress}%`;
   }
 
+  // ── Human Review Manager ───────────────────────────────
+  const ReviewManager = {
+    _items: [], // { id, filename, lineIndex, original, reason, decision: null|'approve'|'reject' }
+
+    extract(outputFiles) {
+      this._items = [];
+      let id = 0;
+      for (const [filename, content] of Object.entries(outputFiles)) {
+        const lines = content.split('\n');
+        lines.forEach((line, lineIndex) => {
+          if (line.includes('@ts-review')) {
+            const m = line.match(/@ts-review[:\s]+(.+)/);
+            const reason = m ? m[1].replace(/\*\/$/, '').trim() : '';
+            this._items.push({ id: id++, filename, lineIndex, original: line, reason, decision: null });
+          }
+        });
+      }
+      return this._items;
+    },
+
+    render() {
+      const panel = document.getElementById('review-panel');
+      const container = document.getElementById('review-items');
+      if (!panel || !container) return;
+
+      if (this._items.length === 0) {
+        panel.hidden = true;
+        return;
+      }
+
+      panel.hidden = false;
+      container.innerHTML = '';
+      const isMultiFile = Object.keys(state.outputFiles).length > 1;
+
+      this._items.forEach(item => {
+        const row = document.createElement('div');
+        row.className = 'review-item';
+        row.dataset.id = item.id;
+        row.setAttribute('role', 'listitem');
+
+        // Meta: location + reason
+        const meta = document.createElement('div');
+        meta.className = 'review-item-meta';
+
+        const loc = document.createElement('span');
+        loc.className = 'review-item-loc';
+        Security.setTextSafe(loc, isMultiFile
+          ? `${item.filename}:${item.lineIndex + 1}`
+          : `Line ${item.lineIndex + 1}`);
+
+        const reason = document.createElement('span');
+        reason.className = 'review-item-reason';
+        Security.setTextSafe(reason, item.reason || 'Needs manual type review');
+
+        meta.append(loc, reason);
+
+        // Code snippet — highlightLine escapes HTML before wrapping in spans (safe)
+        const code = document.createElement('pre');
+        code.className = 'review-item-code';
+        code.setAttribute('aria-label', 'Code snippet');
+        code.innerHTML = Highlighter.highlightLine(item.original.trim());
+
+        // Approve / Reject buttons
+        const actions = document.createElement('div');
+        actions.className = 'review-item-actions';
+
+        const approveBtn = document.createElement('button');
+        approveBtn.className = 'btn-approve';
+        approveBtn.type = 'button';
+        approveBtn.setAttribute('aria-label', `Approve line ${item.lineIndex + 1}`);
+        approveBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="11" height="11" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg> Approve';
+        approveBtn.addEventListener('click', () => this.decide(item.id, 'approve'));
+
+        const rejectBtn = document.createElement('button');
+        rejectBtn.className = 'btn-reject';
+        rejectBtn.type = 'button';
+        rejectBtn.setAttribute('aria-label', `Reject line ${item.lineIndex + 1}`);
+        rejectBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="11" height="11" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg> Reject';
+        rejectBtn.addEventListener('click', () => this.decide(item.id, 'reject'));
+
+        actions.append(approveBtn, rejectBtn);
+        row.append(meta, code, actions);
+        container.appendChild(row);
+      });
+
+      this._updateProgress();
+    },
+
+    decide(id, decision) {
+      const item = this._items.find(i => i.id === id);
+      if (!item) return;
+      item.decision = decision;
+
+      const row = document.querySelector(`.review-item[data-id="${id}"]`);
+      if (row) {
+        row.classList.remove('approved', 'rejected');
+        row.classList.add(decision === 'approve' ? 'approved' : 'rejected');
+      }
+
+      // Re-render code viewer overlay for the current file
+      if (item.filename === state.activeOutputTab) {
+        this._rerenderViewer();
+      }
+
+      this._updateProgress();
+    },
+
+    approveAll() {
+      this._items.forEach(item => { item.decision = 'approve'; });
+      document.querySelectorAll('.review-item').forEach(row => {
+        row.classList.remove('rejected');
+        row.classList.add('approved');
+      });
+      this._rerenderViewer();
+      this._updateProgress();
+    },
+
+    applyDecisions() {
+      const byFile = {};
+      this._items.forEach(item => {
+        if (!byFile[item.filename]) byFile[item.filename] = [];
+        byFile[item.filename].push(item);
+      });
+
+      for (const [filename, items] of Object.entries(byFile)) {
+        const lines = state.outputFiles[filename].split('\n');
+        items.forEach(item => {
+          if (item.decision === 'approve') {
+            // Keep the code line but strip the @ts-review annotation
+            lines[item.lineIndex] = lines[item.lineIndex].replace(/\s*\/\/\s*@ts-review[:\s]*.*/i, '');
+          } else if (item.decision === 'reject') {
+            // Comment the line out with a REJECTED note
+            const reasonStr = item.reason ? ` (${item.reason})` : '';
+            lines[item.lineIndex] = `// ❌ REJECTED${reasonStr} — was: ${lines[item.lineIndex].trimEnd()}`;
+          }
+          // decision === null → leave as-is (annotation stays)
+        });
+        state.outputFiles[filename] = lines.join('\n');
+      }
+
+      this._items = [];
+      const panel = document.getElementById('review-panel');
+      if (panel) panel.hidden = true;
+
+      // Re-render the code viewer with finalized content
+      OutputRenderer.activateTab(state.activeOutputTab);
+      Toast.show('success', 'Reviews Applied', 'Output has been finalized with your decisions and is ready to download.');
+    },
+
+    _rerenderViewer() {
+      const filename = state.activeOutputTab;
+      if (!filename || !state.outputFiles[filename]) return;
+
+      const lines = state.outputFiles[filename].split('\n');
+      const decisionMap = {};
+      this._items.filter(i => i.filename === filename)
+        .forEach(i => { decisionMap[i.lineIndex] = i.decision; });
+
+      dom.lineNumbersOut.textContent = Array.from({ length: lines.length }, (_, i) => i + 1).join('\n');
+      dom.codeHighlight.innerHTML = lines.map((line, idx) => {
+        const h = Highlighter.highlightLine(line);
+        if (line.includes('@ts-review')) {
+          const d = decisionMap[idx];
+          if (d === 'approve') return `<span class="tok-review tok-review--approved">${h}</span>`;
+          if (d === 'reject')  return `<span class="tok-review tok-review--rejected">${h}</span>`;
+          return `<span class="tok-review">${h}</span>`;
+        }
+        return h;
+      }).join('\n');
+    },
+
+    _updateProgress() {
+      const total = this._items.length;
+      const done = this._items.filter(i => i.decision !== null).length;
+      const el = document.getElementById('review-progress');
+      if (el) Security.setTextSafe(el, `${done} / ${total} reviewed`);
+      const badge = document.getElementById('review-badge');
+      if (badge) Security.setTextSafe(badge, String(done >= total ? '✓' : total - done));
+    },
+  };
+
   function handleMigrationResult(result) {
     if (!result) return;
 
@@ -1148,7 +1334,14 @@ const TSForgeApp = (() => {
       ReportRenderer.render(result.report, stats);
     }
 
-    Toast.show('success', 'Migration complete!', `${Object.keys(outputFiles).length} file(s) ready for download.`);
+    // Extract @ts-review items and show the human review panel
+    const reviewItems = ReviewManager.extract(outputFiles);
+    if (reviewItems.length > 0) {
+      ReviewManager.render();
+      Toast.show('warning', `${reviewItems.length} items need review`, 'Scroll down to the Review panel to approve or reject flagged lines.');
+    } else {
+      Toast.show('success', 'Migration complete!', `${Object.keys(outputFiles).length} file(s) ready for download.`);
+    }
   }
 
   function extractStats(reportMd, result) {
@@ -1502,6 +1695,10 @@ export default Transaction;
 
     // Clear log
     dom.clearLogBtn.addEventListener('click', () => FlowVisualizer.clearLog());
+
+    // Review panel — Approve All / Apply Decisions
+    document.getElementById('btn-approve-all').addEventListener('click', () => ReviewManager.approveAll());
+    document.getElementById('btn-finalize').addEventListener('click', () => ReviewManager.applyDecisions());
 
     // Modal close buttons
     document.querySelectorAll('[data-modal]').forEach(btn => {

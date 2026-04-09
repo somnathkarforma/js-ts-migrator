@@ -240,6 +240,24 @@
             <pre class="code-highlight" id="code-highlight" aria-label="TypeScript output code" tabindex="0"></pre>
           </div>
         </div>
+
+        <!-- HUMAN REVIEW PANEL -->
+        <section class="review-panel" id="review-panel" aria-label="Items needing human review" hidden>
+          <div class="review-panel-header">
+            <div class="review-panel-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+              <h3 class="review-panel-heading">Human Review Required</h3>
+              <span class="review-badge" id="review-badge" aria-label="Pending review items">0</span>
+            </div>
+            <div class="review-panel-controls">
+              <span class="review-progress" id="review-progress" aria-live="polite"></span>
+              <button class="btn-approve-all" id="btn-approve-all" type="button">✓ Approve All</button>
+              <button class="btn-finalize" id="btn-finalize" type="button">Apply &amp; Finalize</button>
+            </div>
+          </div>
+          <p class="review-panel-desc">Lines flagged by the AI as needing human verification. <strong>Approve</strong> to keep a line (removes the annotation) or <strong>Reject</strong> to comment it out. Click <strong>Apply &amp; Finalize</strong> when done.</p>
+          <div class="review-items" id="review-items" role="list" aria-label="Review items"></div>
+        </section>
       </article>
     </section>
 
@@ -352,9 +370,9 @@
   <!-- TOAST CONTAINER -->
   <div class="toast-container" id="toast-container" aria-live="assertive" aria-atomic="false" role="status"></div>
 
-  <script src="config.js?v=5"></script>
-  <script src="flow.js?v=5"></script>
-  <script src="agent.js?v=5"></script>
-  <script src="app.js?v=5"></script>
+  <script src="config.js?v=6"></script>
+  <script src="flow.js?v=6"></script>
+  <script src="agent.js?v=6"></script>
+  <script src="app.js?v=6"></script>
 </body>
 </html>
