@@ -475,9 +475,10 @@ Return ONLY the complete TypeScript file. No explanation.`;
       analysisResults.forEach(r => {
         const imports = r.analysis?.imports || r.analysis?.dependencies || [];
         (Array.isArray(imports) ? imports : []).forEach(imp => {
-          // Only include non-relative, non-builtin-typescript imports
-          if (typeof imp === 'string' && !imp.startsWith('.') && !imp.startsWith('/')) {
-            allImports.add(imp.split('/')[0]); // strip subpaths (e.g. lodash/fp → lodash)
+          // imports can be objects {source, specifiers} or plain strings
+          const src = typeof imp === 'string' ? imp : (imp?.source ?? '');
+          if (src && !src.startsWith('.') && !src.startsWith('/')) {
+            allImports.add(src.split('/')[0]); // strip subpaths (e.g. lodash/fp → lodash)
           }
         });
       });
@@ -525,7 +526,10 @@ Return ONLY the complete TypeScript file. No explanation.`;
         'process','cluster','vm','assert','tty','dns','dgram','v8','worker_threads']);
       const needsNodeTypes = analysisResults.some(r => {
         const imports = r.analysis?.imports || r.analysis?.dependencies || [];
-        return (Array.isArray(imports) ? imports : []).some(i => NODE_BUILTINS.has(i));
+        return (Array.isArray(imports) ? imports : []).some(imp => {
+          const src = typeof imp === 'string' ? imp : (imp?.source ?? '');
+          return NODE_BUILTINS.has(src);
+        });
       });
       if (needsNodeTypes) allImports.add('node');
 
@@ -629,12 +633,9 @@ Generate the TypeScript configuration files.`;
         return `${r.file}: ${JSON.stringify(counts)}`;
       }).join('\n');
 
-      // Build the exact npm install command from resolved package_additions
-      const pkgAdditions = config?.package_additions || configFiles['package-types-additions.json']
-        ? (() => { try { return JSON.parse(configFiles['package-types-additions.json'] || '{}'); } catch(_){ return {}; } })()
-        : { typescript: '^5.0.0', 'ts-node': '^10.0.0' };
-      // parse from stored file since config was already converted above
-      let installCmd = 'npm install --save-dev';
+      // Build the exact npm install command from the stored package-types-additions.json
+      // (config is local to stageConfigGeneration; read from the configFiles output instead)
+      let installCmd = 'npm install --save-dev typescript ts-node @typescript-eslint/parser @typescript-eslint/eslint-plugin';
       try {
         const stored = configFiles['package-types-additions.json'];
         if (stored) {
