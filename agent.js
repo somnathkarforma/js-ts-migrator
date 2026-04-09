@@ -14,7 +14,12 @@ const MigrationAgent = (() => {
   const MODELS = ['llama-3.3-70b-versatile', 'meta-llama/llama-4-scout-17b-16e-instruct'];
   const MAX_OUTPUT_TOKENS = 4096;  // reduced from 8192 — Groq charges both input+output against TPM
   const MAX_TOKENS_PER_BATCH = 2000;  // reduced from 4000 to stay under 12k TPM/min
-  const MAX_RETRIES = 4;
+  const MAX_RETRIES = 6;
+
+  // Sticky model index — shared across all stages in one migration run.
+  // Once we fall back to the secondary model due to TPM limits, we stay on
+  // it for all subsequent calls so we don't re-hammer the exhausted primary.
+  let _activeModelIdx = 0;
   const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
 
   const STAGES = [
@@ -116,13 +121,24 @@ MANDATORY TRANSFORMATIONS:
 9. Add generic type parameters to generic functions/classes
 10. Convert PropTypes (React) to TypeScript interface props
 
-REVIEW MARKERS:
-For any transformation you are not fully confident in, add a comment:
-// @ts-review: [specific reason why human review is needed]
+REVIEW MARKERS — MANDATORY:
+For ANY of the following, you MUST add a trailing comment on the same line:
+// @ts-review: [specific reason]
+  - Any use of `any` type (mandatory)
+  - Any function where the return type is inferred from complex logic
+  - Any parameter whose type cannot be 100% confirmed from usage alone
+  - Any class property whose type could be more than one option
+  - Any cast or type assertion (as X)
+  - Any generic function where the type parameter is a guess
+  - Any variable initialised to null or undefined
+  - Any interface field that might be optional but you aren't certain
+When in doubt, always add @ts-review. It is far better to review too many
+lines than to silently produce a wrong type. Aim for at least 2-3 @ts-review
+markers per file unless the file is trivially simple (< 20 lines).
 
 QUALITY STANDARDS:
 - The output must compile with: tsc --strict --noImplicitAny
-- Do not use \`any\` type unless absolutely unavoidable (and mark with @ts-review)
+- Do not use `any` type unless absolutely unavoidable (and mark with @ts-review)
 - Preserve all original logic exactly — only add types, do not refactor logic
 - Preserve all original comments
 - Add @ts-nocheck ONLY at the top if the file is truly unmigrateable
@@ -213,23 +229,28 @@ identifier names from the migration data. Do not use placeholder text.`,
   }
 
   // ── Retry + Model-Fallback Wrapper ────────────────────
-  // On TPM rate-limit (tokens/min), automatically switches to the fallback
-  // model (llama-4-scout-17b-16e-instruct, 30k TPM) before applying backoff.
-  // On other 429s, waits for the Retry-After header duration.
+  // Uses the shared _activeModelIdx so that once the pipeline falls back to
+  // the secondary model, ALL subsequent stage calls also use it.
+  // On TPM 429: advance to next model (sticky) + brief settle delay.
+  // On other 429s: honour Retry-After header, else exponential backoff.
   async function callGroqWithRetry(apiKey, systemPrompt, userPrompt, signal) {
     let lastError;
-    let modelIdx = 0;  // indexes into MODELS[]
 
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
       try {
         if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
-        return await callGroq(apiKey, systemPrompt, userPrompt, signal, MODELS[modelIdx]);
+        return await callGroq(apiKey, systemPrompt, userPrompt, signal, MODELS[_activeModelIdx]);
       } catch (err) {
         if (err.name === 'AbortError') throw err;
         lastError = err;
 
-        const is429 = err.status === 429 || err.message?.includes('429');
-        const isTPM = err.message?.includes('tokens per minute');
+        const is429   = err.status === 429 || err.message?.includes('429');
+        const isTPM   = is429 && (
+          err.message?.includes('tokens per minute') ||
+          err.message?.includes('TPM') ||
+          err.message?.includes('rate_limit_exceeded') ||
+          err.message?.includes('Request too large')
+        );
         const isRetryable = is429 ||
                             err.message?.includes('500') ||
                             err.message?.includes('503') ||
@@ -238,16 +259,18 @@ identifier names from the migration data. Do not use placeholder text.`,
 
         if (!isRetryable || attempt === MAX_RETRIES - 1) throw err;
 
-        // Token-per-minute limit? Switch to faster fallback model immediately
-        if (isTPM && modelIdx < MODELS.length - 1) {
-          modelIdx++;
-          continue;  // no delay — just switch model
+        if (isTPM && _activeModelIdx < MODELS.length - 1) {
+          // Permanently advance to fallback model for this whole migration run
+          _activeModelIdx++;
+          // Brief settle so the new model's TPM window is clean
+          await new Promise(resolve => setTimeout(resolve, 3000 + Math.random() * 2000));
+          continue;
         }
 
         // Respect Retry-After header if present, else exponential backoff
         const delay = (err.retryAfterMs != null)
           ? err.retryAfterMs + Math.random() * 2000
-          : Math.pow(2, attempt) * 2000 + Math.random() * 1000;
+          : Math.pow(2, attempt) * 3000 + Math.random() * 1000;
 
         await new Promise(resolve => setTimeout(resolve, delay));
       }
@@ -561,6 +584,10 @@ Write the full migration report in Markdown.`;
   async function run(files, apiKey, onStageUpdate, signal, resumeFrom = null) {
     if (!files || files.length === 0) throw new Error('No files provided');
     if (!apiKey) throw new Error('No API key provided');
+
+    // Reset sticky model to primary at the start of each fresh run.
+    // On resume, keep current model (it may already be on fallback).
+    if (!resumeFrom) _activeModelIdx = 0;
 
     const notify = (index, status, data) => {
       try { onStageUpdate(index, status, data); } catch (_) {}

@@ -1167,13 +1167,23 @@ const TSForgeApp = (() => {
       const container = document.getElementById('review-items');
       if (!panel || !container) return;
 
+      panel.hidden = false;
+      container.innerHTML = '';
+
       if (this._items.length === 0) {
-        panel.hidden = true;
+        // Empty state — show panel but indicate nothing needs review
+        const empty = document.createElement('div');
+        empty.className = 'review-empty';
+        empty.setAttribute('role', 'listitem');
+        empty.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>';
+        const txt = document.createElement('span');
+        Security.setTextSafe(txt, 'No items flagged — all transformations were high-confidence. Safe to download.');
+        empty.appendChild(txt);
+        container.appendChild(empty);
+        this._updateProgress();
         return;
       }
 
-      panel.hidden = false;
-      container.innerHTML = '';
       const isMultiFile = Object.keys(state.outputFiles).length > 1;
 
       this._items.forEach(item => {
@@ -1317,9 +1327,14 @@ const TSForgeApp = (() => {
       const total = this._items.length;
       const done = this._items.filter(i => i.decision !== null).length;
       const el = document.getElementById('review-progress');
-      if (el) Security.setTextSafe(el, `${done} / ${total} reviewed`);
+      if (el) Security.setTextSafe(el, total === 0 ? 'All clear' : `${done} / ${total} reviewed`);
       const badge = document.getElementById('review-badge');
-      if (badge) Security.setTextSafe(badge, String(done >= total ? '✓' : total - done));
+      if (badge) {
+        Security.setTextSafe(badge, total === 0 ? '✓' : (done >= total ? '✓' : String(total - done)));
+        badge.style.background = total === 0 || done >= total
+          ? 'var(--color-accent-secondary)'
+          : 'var(--color-accent-warning)';
+      }
     },
   };
 
@@ -1334,13 +1349,13 @@ const TSForgeApp = (() => {
       ReportRenderer.render(result.report, stats);
     }
 
-    // Extract @ts-review items and show the human review panel
+    // Extract @ts-review items and always show the human review panel
     const reviewItems = ReviewManager.extract(outputFiles);
+    ReviewManager.render();
     if (reviewItems.length > 0) {
-      ReviewManager.render();
-      Toast.show('warning', `${reviewItems.length} items need review`, 'Scroll down to the Review panel to approve or reject flagged lines.');
+      Toast.show('warning', `${reviewItems.length} item${reviewItems.length > 1 ? 's' : ''} need review`, 'Scroll to the Review panel below the code to approve or reject flagged lines.');
     } else {
-      Toast.show('success', 'Migration complete!', `${Object.keys(outputFiles).length} file(s) ready for download.`);
+      Toast.show('success', 'Migration complete!', `${Object.keys(outputFiles).length} file(s) ready — no uncertain types found.`);
     }
   }
 

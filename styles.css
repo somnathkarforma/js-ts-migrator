@@ -1154,6 +1154,15 @@ input, textarea, select {
   max-height: 400px;
   overflow-y: auto;
 }
+.review-empty {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  color: var(--color-accent-secondary);
+  font-size: 13px;
+}
+.review-empty svg { flex-shrink: 0; }
 .review-item {
   display: grid;
   grid-template-columns: 1fr auto;
