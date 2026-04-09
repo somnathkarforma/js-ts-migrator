@@ -124,6 +124,147 @@ input, textarea, select {
 ::-webkit-scrollbar-thumb { background: var(--color-border-bright); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--color-text-tertiary); }
 
+/* ── HERO BANNER ─────────────────────────────────────── */
+.page-hero {
+  background: linear-gradient(
+    135deg,
+    #0a0e1a 0%,
+    #0f1829 40%,
+    #0e1a2e 70%,
+    #0a0e1a 100%
+  );
+  border-bottom: 1px solid var(--color-border);
+  padding: 48px 24px 44px;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Subtle radial glow behind the title */
+.page-hero::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse 70% 60% at 50% 0%, rgba(59,130,246,0.12) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+/* Soft grid overlay */
+.page-hero::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(59,130,246,0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(59,130,246,0.04) 1px, transparent 1px);
+  background-size: 48px 48px;
+  pointer-events: none;
+}
+
+.hero-inner {
+  position: relative;
+  z-index: 1;
+  max-width: 860px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+}
+
+.hero-eyebrow {
+  display: flex;
+  justify-content: center;
+}
+
+.hero-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(59,130,246,0.12);
+  border: 1px solid rgba(59,130,246,0.3);
+  color: var(--color-accent-primary);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  padding: 5px 12px;
+  border-radius: 999px;
+  animation: hero-badge-pulse 3s ease-in-out infinite;
+}
+
+@keyframes hero-badge-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(59,130,246,0.2); }
+  50%       { box-shadow: 0 0 0 6px rgba(59,130,246,0); }
+}
+
+.hero-title {
+  font-family: var(--font-display);
+  font-size: clamp(28px, 4.5vw, 52px);
+  font-weight: 800;
+  color: var(--color-text-primary);
+  line-height: 1.15;
+  letter-spacing: -1px;
+}
+
+.hero-title-accent {
+  background: linear-gradient(90deg, #3B82F6 0%, #8B5CF6 50%, #10B981 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.hero-subtitle {
+  font-size: clamp(14px, 1.6vw, 17px);
+  color: var(--color-text-secondary);
+  max-width: 640px;
+  line-height: 1.7;
+}
+
+.hero-features {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.hero-feature {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 5px 12px;
+  font-size: 12.5px;
+  color: var(--color-text-secondary);
+  font-weight: 500;
+  transition: border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.hero-feature svg { color: var(--color-accent-secondary); flex-shrink: 0; }
+
+.hero-feature:hover {
+  border-color: var(--color-border-bright);
+  color: var(--color-text-primary);
+}
+
+/* Light mode adjustments */
+[data-theme="light"] .page-hero {
+  background: linear-gradient(135deg, #eff6ff 0%, #f0f9ff 40%, #f5f3ff 70%, #eff6ff 100%);
+}
+
+[data-theme="light"] .page-hero::before {
+  background: radial-gradient(ellipse 70% 60% at 50% 0%, rgba(59,130,246,0.08) 0%, transparent 70%);
+}
+
+[data-theme="light"] .page-hero::after {
+  background-image:
+    linear-gradient(rgba(59,130,246,0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(59,130,246,0.06) 1px, transparent 1px);
+}
+
 /* ── HEADER ──────────────────────────────────────────── */
 .app-header {
   height: var(--header-height);
@@ -1819,4 +1960,7 @@ input, textarea, select {
   .btn-save-key { display: none; }
   .api-key-field { width: 120px; }
   .app-main { padding: 8px; gap: 8px; }
+  .page-hero { padding: 32px 16px 28px; }
+  .hero-features { gap: 8px; }
+  .hero-feature { font-size: 11.5px; padding: 4px 10px; }
 }
