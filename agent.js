@@ -124,7 +124,7 @@ MANDATORY TRANSFORMATIONS:
 REVIEW MARKERS — MANDATORY:
 For ANY of the following, you MUST add a trailing comment on the same line:
 // @ts-review: [specific reason]
-  - Any use of `any` type (mandatory)
+  - Any use of \`any\` type (mandatory)
   - Any function where the return type is inferred from complex logic
   - Any parameter whose type cannot be 100% confirmed from usage alone
   - Any class property whose type could be more than one option
@@ -138,7 +138,7 @@ markers per file unless the file is trivially simple (< 20 lines).
 
 QUALITY STANDARDS:
 - The output must compile with: tsc --strict --noImplicitAny
-- Do not use `any` type unless absolutely unavoidable (and mark with @ts-review)
+- Do not use \`any\` type unless absolutely unavoidable (and mark with @ts-review)
 - Preserve all original logic exactly — only add types, do not refactor logic
 - Preserve all original comments
 - Add @ts-nocheck ONLY at the top if the file is truly unmigrateable
