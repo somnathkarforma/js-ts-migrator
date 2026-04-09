@@ -288,25 +288,29 @@ identifier names from the migration data. Do not use placeholder text.`,
   async function stageAnalysis(files, apiKey, signal, onStageUpdate) {
     onStageUpdate(0, 'running', null);
     try {
-    for (const file of files) {
-      const truncated = file.content.slice(0, MAX_TOKENS_PER_BATCH * 3);
-      const prompt = `Analyze this JavaScript file named "${file.name}":\n\n\`\`\`javascript\n${truncated}\n\`\`\``;
-      const raw = await callGroqWithRetry(apiKey, SYSTEM_PROMPTS.analysis, prompt, signal);
-      let analysis;
-      try {
-        analysis = extractJson(raw);
-      } catch (_) {
-        analysis = {
-          module_system: 'unknown', framework: 'unknown',
-          jsdoc_coverage: 0, complexity: 'medium',
-          functions: [], classes: [], variables: [], imports: [], exports: [],
-        };
+      const results = [];
+      for (const file of files) {
+        const truncated = file.content.slice(0, MAX_TOKENS_PER_BATCH * 3);
+        const prompt = `Analyze this JavaScript file named "${file.name}":\n\n\`\`\`javascript\n${truncated}\n\`\`\``;
+        const raw = await callGroqWithRetry(apiKey, SYSTEM_PROMPTS.analysis, prompt, signal);
+        let analysis;
+        try {
+          analysis = extractJson(raw);
+        } catch (_) {
+          analysis = {
+            module_system: 'unknown', framework: 'unknown',
+            jsdoc_coverage: 0, complexity: 'medium',
+            functions: [], classes: [], variables: [], imports: [], exports: [],
+          };
+        }
+        results.push({ file: file.name, analysis });
       }
-      results.push({ file: file.name, analysis });
+      onStageUpdate(0, 'complete', { results });
+      return results;
+    } catch (err) {
+      if (err.name !== 'AbortError') onStageUpdate(0, 'error', { message: err.message });
+      throw err;
     }
-
-    onStageUpdate(0, 'complete', { results });
-    return results;
   }
 
   // ── Stage 2: Type Inference ───────────────────────────
