@@ -283,6 +283,25 @@ input, textarea, select {
   border: 1px solid rgba(239,68,68,0.35);
 }
 
+/* Shown when the key is auto-loaded from repository secrets */
+.auto-key-badge {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  background: rgba(16,185,129,0.15);
+  color: var(--color-accent-secondary);
+  border: 1px solid rgba(16,185,129,0.35);
+  white-space: nowrap;
+}
+
+/* Hide the manual-entry group when key is auto-loaded */
+.api-key-section.auto-loaded .api-key-input-group,
+.api-key-section.auto-loaded .btn-save-key,
+.api-key-section.auto-loaded .key-status {
+  display: none;
+}
+
 .theme-toggle .icon-moon { display: none; }
 [data-theme="dark"] .theme-toggle .icon-sun  { display: none; }
 [data-theme="dark"] .theme-toggle .icon-moon { display: block; }

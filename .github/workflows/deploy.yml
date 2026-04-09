@@ -1,0 +1,48 @@
+name: Deploy TS·FORGE to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Only one concurrent deployment; skip in-progress runs.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Inject Anthropic API key into config.js
+        # Writes the secret into config.js for the Pages artifact only.
+        # The key is NOT committed back to the repository.
+        # NOTE: The deployed config.js will be publicly accessible at your
+        # Pages URL. Restrict API key usage in the Anthropic console to
+        # your Pages domain to limit exposure.
+        run: |
+          echo "window.TSFORGE_API_KEY = '${{ secrets.ANTHROPIC_API_KEY }}';" > config.js
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: '.'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

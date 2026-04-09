@@ -175,6 +175,17 @@ const TSForgeApp = (() => {
     },
 
     load() {
+      // Priority 1: key injected at deploy time via GitHub Actions secret
+      const envKey = (typeof window.TSFORGE_API_KEY === 'string') ? window.TSFORGE_API_KEY.trim() : '';
+      if (envKey && Security.isValidApiKey(envKey)) {
+        state.apiKey = envKey;
+        sessionStorage.setItem('tsforge_key', envKey);
+        if (dom.apiKeySection) dom.apiKeySection.classList.add('auto-loaded');
+        if (dom.autoKeyBadge) dom.autoKeyBadge.hidden = false;
+        updateMigrateButton();
+        return;
+      }
+      // Priority 2: key previously saved by the user in this session
       const stored = sessionStorage.getItem('tsforge_key');
       if (stored && Security.isValidApiKey(stored)) {
         state.apiKey = stored;
@@ -1251,6 +1262,8 @@ export default Transaction;
       apiKeyHelp:       document.getElementById('api-key-help'),
       saveKeyBtn:       document.getElementById('btn-save-key'),
       keyStatus:        document.getElementById('key-status'),
+      autoKeyBadge:     document.getElementById('auto-key-badge'),
+      apiKeySection:    document.querySelector('.api-key-section'),
       themeToggle:      document.getElementById('theme-toggle'),
       fileInput:        document.getElementById('file-input'),
       dropzone:         document.getElementById('dropzone'),
